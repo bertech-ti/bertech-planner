@@ -3,6 +3,129 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Planificador MPS v100.3 · Bertech Panamá</title>
+<!-- MSAL.js para autenticación Microsoft / SharePoint -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════
+// CONFIGURACIÓN SHAREPOINT — ajustar si cambia el tenant
+// ═══════════════════════════════════════════════════
+const SP_CONFIG = {
+  tenantId:    'f90ffe53-a192-4489-b8ba-a36af4a158e6',
+  clientId:    '04b07795-8ddb-461a-bbee-02f9e1bf7b46', // Azure CLI public client (sin registro propio)
+  siteUrl:     'https://bertechpty.sharepoint.com/sites/Bertech_Panama',
+  driveRelPath: 'Documentos compartidos/07. Producción/7.4 Planificación y control/7.4.2 Programación de producción/7.4.2.1 PCP/Planner-MPS',
+  fileName:    'mps_dados.json',
+  scopes:      ['https://bertechpty.sharepoint.com/AllSites.Manage']
+};
+
+const msalApp = new msal.PublicClientApplication({
+  auth: {
+    clientId:   SP_CONFIG.clientId,
+    authority:  'https://login.microsoftonline.com/' + SP_CONFIG.tenantId,
+    redirectUri: window.location.origin + window.location.pathname
+  },
+  cache: { cacheLocation: 'sessionStorage' }
+});
+
+async function getSpToken() {
+  let account = msalApp.getAllAccounts()[0];
+  const req = { scopes: SP_CONFIG.scopes, account };
+  try {
+    const res = await msalApp.acquireTokenSilent(req);
+    return res.accessToken;
+  } catch {
+    const res = await msalApp.acquireTokenPopup(req);
+    return res.accessToken;
+  }
+}
+
+async function spGetFileUrl() {
+  // Monta URL Graph para o arquivo dentro do drive do site
+  const encoded = encodeURIComponent(SP_CONFIG.driveRelPath + '/' + SP_CONFIG.fileName);
+  return `https://graph.microsoft.com/v1.0/sites/bertechpty.sharepoint.com:/sites/Bertech_Panama:/drive/root:/${SP_CONFIG.driveRelPath}/${SP_CONFIG.fileName}`;
+}
+
+async function loadFromSharePoint() {
+  const btn = document.getElementById('btnSpLoad');
+  const info = document.getElementById('shareInfo');
+  try {
+    btn.disabled = true;
+    info.textContent = '🔄 Conectando ao SharePoint...';
+    info.style.color = '#7eb8f0';
+    const token = await getSpToken();
+    const path = encodeURIComponent(SP_CONFIG.driveRelPath + '/' + SP_CONFIG.fileName);
+    const metaUrl = `https://graph.microsoft.com/v1.0/sites/bertechpty.sharepoint.com:/sites/Bertech_Panama:/drive/root:/${SP_CONFIG.driveRelPath}/${SP_CONFIG.fileName}`;
+    const meta = await fetch(metaUrl, { headers: { Authorization: 'Bearer ' + token } });
+    if (!meta.ok) throw new Error('Arquivo não encontrado no SharePoint (HTTP ' + meta.status + ')');
+    const metaJson = await meta.json();
+    const dlUrl = metaJson['@microsoft.graph.downloadUrl'];
+    const file = await fetch(dlUrl);
+    if (!file.ok) throw new Error('Falha ao baixar o arquivo');
+    const state = await file.json();
+    applyFullState(state);
+    renderCalendar();
+    if (state.lastPlan && state.lastPlan.schedule && state.lastPlan.schedule.some(d => d.entries && d.entries.length > 0)) {
+      const compatible = planCompatibleWithOrders(state.lastPlan, state.orders || []);
+      if (compatible) {
+        if (confirm('Este arquivo contém um plano com programação coerente com os pedidos atuais. Usar esta programação diretamente (Sim) ou recalcular (Não)?')) {
+          loadPlanFromJSON(state);
+          setStatus('✅ Plan cargado desde SharePoint (Gantt/JSON)');
+          info.textContent = '✅ Cargado desde SharePoint: ' + new Date(state.saved_at).toLocaleString('es-CL');
+          info.style.color = '#45d483';
+          return;
+        }
+      }
+    }
+    runScenario();
+    info.textContent = '✅ Cargado desde SharePoint: ' + new Date(state.saved_at).toLocaleString('es-CL');
+    info.style.color = '#45d483';
+    setStatus('✅ Estado cargado desde SharePoint — ' + SP_CONFIG.fileName);
+  } catch (err) {
+    info.textContent = '❌ ' + err.message;
+    info.style.color = '#ff6b6b';
+    setStatus('❌ Error SharePoint: ' + err.message);
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function saveToSharePoint() {
+  const btn = document.getElementById('btnSpSave');
+  const info = document.getElementById('shareInfo');
+  try {
+    btn.disabled = true;
+    info.textContent = '🔄 Guardando en SharePoint...';
+    info.style.color = '#7eb8f0';
+    const token = await getSpToken();
+    const state = collectFullState();
+    const json = JSON.stringify(state, null, 2);
+    const uploadUrl = `https://graph.microsoft.com/v1.0/sites/bertechpty.sharepoint.com:/sites/Bertech_Panama:/drive/root:/${SP_CONFIG.driveRelPath}/${SP_CONFIG.fileName}:/content`;
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: json
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error('Error al guardar (HTTP ' + res.status + '): ' + errBody.slice(0, 120));
+    }
+    info.textContent = '✅ Guardado en SharePoint: ' + new Date().toLocaleString('es-CL');
+    info.style.color = '#45d483';
+    setStatus('✅ Estado guardado en SharePoint correctamente — visible para todos los usuarios.');
+  } catch (err) {
+    info.textContent = '❌ ' + err.message;
+    info.style.color = '#ff6b6b';
+    setStatus('❌ Error al guardar en SharePoint: ' + err.message);
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
 <style>
 :root{--bg:#0a1020;--panel:#111a2f;--panel2:#0e1730;--border:#24345a;--text:#e9eefc;--muted:#9fb0da;--blue:#6ea8fe;--green:#45d483;--orange:#ffb454;--red:#ff6b6b;--cyan:#56d4c8;--pink:#f0a}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#07101f,#050a16 60%);color:var(--text);font-family:Inter,Segoe UI,sans-serif;font-size:14px}
@@ -71,12 +194,11 @@ table.gantt tr.g-total td.over{color:var(--red)!important}
   <div class="sub">Motor ETD mandante + Simulación S&OP + Stock dinámico + Sensibilidad operadores por tramo · v100.5.3</div>
   <div style="margin-bottom:12px;padding:10px 14px;border-radius:10px;border:1px solid rgba(16,185,129,.35);background:rgba(16,185,129,.08);color:#b7f7d0;font-size:12px"><b>v100.3:</b> Mantiene la lógica de cálculo de requerimientos de v100.1 y aclara la interfaz de stock inicial: distingue <b>envasado base sin etiqueta</b> vs <b>etiquetado listo</b>, explicita carga compuesta de kits <b>PT + PF</b> y reduce la ambigüedad visual en solvente, imprimante goma y catalizador BF01/02.</div>
 
-  <!-- SHARED STORAGE BAR -->
+  <!-- SHARED STORAGE BAR — SharePoint Integration -->
   <div class="share-bar">
-    <div class="info">📁 <b>Disco compartido:</b> Guarda y carga el estado desde un archivo <code>mps_datos.json</code> en tu carpeta compartida. Todos los que abran este HTML y carguen ese archivo verán los mismos datos.</div>
-    <input type="file" id="loadSharedFile" accept=".json" style="max-width:200px;padding:4px;font-size:12px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px">
-    <button class="btn-share" onclick="loadSharedState()">📂 Cargar Estado</button>
-    <button class="btn-share" onclick="saveSharedState()">💾 Guardar al Compartido</button>
+    <div class="info">☁️ <b>SharePoint Bertech:</b> El estado se guarda y carga directamente desde la carpeta compartida en SharePoint. Solo el Planificador guarda; todos los demás pueden cargar.</div>
+    <button id="btnSpLoad" class="btn-share" onclick="loadFromSharePoint()">📂 Cargar desde SharePoint</button>
+    <button id="btnSpSave" class="btn-share" style="background:#0e7a0e" onclick="saveToSharePoint()">💾 Guardar en SharePoint</button>
     <span id="shareInfo" class="small" style="color:#7eb8f0"></span>
   </div>
 
@@ -691,36 +813,12 @@ function applyFullState(state){
   document.getElementById('shareInfo').textContent='Cargado: '+new Date(state.saved_at).toLocaleString('es-CL')+suffix;
 }
 function saveSharedState(){
-  const state=collectFullState();
-  const json=JSON.stringify(state,null,2);
-  const blob=new Blob([json],{type:'application/json'});
-  saveFileAs(blob,'mps_datos.json','Estado compartido MPS');
-  setStatus('💾 Estado guardado como mps_datos.json — guárdalo en tu carpeta compartida de OneDrive.');
+  // Delegado a SharePoint — mantido para compatibilidade com chamadas internas
+  saveToSharePoint();
 }
 function loadSharedState(){
-  const file=document.getElementById('loadSharedFile').files[0];
-  if(!file){setStatus('Selecciona el archivo mps_datos.json primero.');return;}
-  const reader=new FileReader();
-  reader.onload=function(e){
-    try{const state=JSON.parse(e.target.result);applyFullState(state);
-    renderCalendar();
-    // If JSON has a lastPlan with schedule, offer to use it directly (from Gantt Interactiva)
-    if(state.lastPlan&&state.lastPlan.schedule&&state.lastPlan.schedule.some(d=>d.entries&&d.entries.length>0)){
-      const compatible=planCompatibleWithOrders(state.lastPlan, state.orders||[]);
-      if(compatible){
-        if(confirm('Este archivo contiene un plan con programación coherente con los pedidos actuales. ¿Usar esta programación directamente (Sí) o recalcular desde el motor (No)?')){
-          loadPlanFromJSON(state);
-          setStatus('✅ Plan cargado desde Gantt/JSON — reportes actualizados');
-          return;
-        }
-      }else{
-        setStatus('ℹ️ El archivo trae un lastPlan antiguo que no coincide con los pedidos/metas actuales. Se recalculará para evitar incoherencias.');
-      }
-    }
-    runScenario();
-    setStatus('✅ Estado cargado desde '+file.name);}
-    catch(err){setStatus('❌ Error: '+err.message);}
-  };reader.readAsText(file);
+  // Delegado a SharePoint — mantido para compatibilidade com chamadas internas
+  loadFromSharePoint();
 }
 
 function loadPlanFromJSON(state){
