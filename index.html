@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Planner PCP Producción - v100.3 · Bertech Panamá</title>
+<title>Planner PCP Producción</title>
 <!-- MSAL.js para autenticación Microsoft / SharePoint -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 <script>
@@ -18,16 +18,23 @@ const SP_CONFIG = {
   scopes:      ['https://bertechpty.sharepoint.com/AllSites.Manage']
 };
 
-const msalApp = new msal.PublicClientApplication({
-  auth: {
-    clientId:   SP_CONFIG.clientId,
-    authority:  'https://login.microsoftonline.com/' + SP_CONFIG.tenantId,
-    redirectUri: window.location.origin + window.location.pathname
-  },
-  cache: { cacheLocation: 'sessionStorage' }
-});
+let _msalApp = null;
+function getMsalApp() {
+  if (!_msalApp) {
+    _msalApp = new msal.PublicClientApplication({
+      auth: {
+        clientId:   SP_CONFIG.clientId,
+        authority:  'https://login.microsoftonline.com/' + SP_CONFIG.tenantId,
+        redirectUri: window.location.origin + window.location.pathname
+      },
+      cache: { cacheLocation: 'sessionStorage' }
+    });
+  }
+  return _msalApp;
+}
 
 async function getSpToken() {
+  const msalApp = getMsalApp();
   let account = msalApp.getAllAccounts()[0];
   const req = { scopes: SP_CONFIG.scopes, account };
   try {
@@ -190,7 +197,7 @@ table.gantt tr.g-total td.over{color:var(--red)!important}
 </head>
 <body>
 <div class="app">
-  <h1>Planificador MPS v100.3 · Bertech Panamá</h1>
+  <h1>Planner PCP Producción</h1>
   <div class="sub">Motor ETD mandante + Simulación S&OP + Stock dinámico + Sensibilidad operadores por tramo · v100.5.3</div>
   <div style="margin-bottom:12px;padding:10px 14px;border-radius:10px;border:1px solid rgba(16,185,129,.35);background:rgba(16,185,129,.08);color:#b7f7d0;font-size:12px"><b>v100.3:</b> Mantiene la lógica de cálculo de requerimientos de v100.1 y aclara la interfaz de stock inicial: distingue <b>envasado base sin etiqueta</b> vs <b>etiquetado listo</b>, explicita carga compuesta de kits <b>PT + PF</b> y reduce la ambigüedad visual en solvente, imprimante goma y catalizador BF01/02.</div>
 
