@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Planificador MPS v100.3 · Bertech Panamá</title>
+<link rel="stylesheet" href="Planner_V109_estilos.css">
+</head>
+<body>
+<div class="app">
+  <h1>Planificador MPS v100.3 · Bertech Panamá</h1>
+  <div class="sub">Motor ETD mandante + Simulación S&OP + Stock dinámico + Sensibilidad operadores por tramo · v100.5.3</div>
+  <div style="margin-bottom:12px;padding:10px 14px;border-radius:10px;border:1px solid rgba(16,185,129,.35);background:rgba(16,185,129,.08);color:#b7f7d0;font-size:12px"><b>v100.3:</b> Mantiene la lógica de cálculo de requerimientos de v100.1 y aclara la interfaz de stock inicial: distingue <b>envasado base sin etiqueta</b> vs <b>etiquetado listo</b>, explicita carga compuesta de kits <b>PT + PF</b> y reduce la ambigüedad visual en solvente, imprimante goma y catalizador BF01/02.</div>
+
+  <!-- SHARED STORAGE BAR -->
+  <div class="share-bar">
+    <div class="info">📁 <b>Disco compartido:</b> Guarda y carga el estado desde un archivo <code>mps_datos.json</code> en tu carpeta compartida. Todos los que abran este HTML y carguen ese archivo verán los mismos datos.</div>
+    <input type="file" id="loadSharedFile" accept=".json" style="max-width:200px;padding:4px;font-size:12px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px">
+    <button class="btn-share" onclick="loadSharedState()">📂 Cargar Estado</button>
+    <button class="btn-share" onclick="saveSharedState()">💾 Guardar al Compartido</button>
+    <span id="shareInfo" class="small" style="color:#7eb8f0"></span>
+  </div>
+
+  <div class="grid">
+    <!-- LEFT PANEL -->
+    <div class="panel"><h2>Parámetros</h2><div class="body">
+      <div class="note">Límites de paralelización: ETI POTE BF03=2, ENV SOLVENTE=2, ETI SOLVENTE FLEXSOL=3, ETI IMP GOMA=3, ENV/ETI IMP FIERRO A y B=2, ENV CAT 01/02=2, ETI CAT 01/02=3, ETI SOLVENTE DURAFAST=4, ETI BALDE MX1 5KG=2, ETI BALDE MX1 10KG=1, ETI BALDE MX2 5KG=2 y ETI BALDE MX2 10KG=2.</div>
+      <div class="row">
+        <div><label>Modo</label><select id="mode"><option value="mix">Cumplir mix objetivo</option><option value="max">Maximizar kits</option></select></div>
+        <div><label>Operadores por bloque</label><input id="ops" type="number" value="10" min="1" max="30"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label>Fecha inicio</label><input id="start" type="date" value="2026-03-30"></div>
+        <div><label>Fecha término</label><input id="end" type="date" value="2026-04-30"></div>
+      </div>
+      <div style="margin-top:10px"><label>Feriados extra (YYYY-MM-DD separados por coma)</label><input id="holidays" value="2026-04-03"></div>
+      <details open style="margin-top:10px"><summary>Operadores por tramo de fechas</summary>
+        <div class="small" style="margin:6px 0">Define cambios de dotación por rango. Formato: <b>fecha_inicio,fecha_fin,operadores</b>, una línea por tramo. Si un día no cae en ningún tramo, se usa el valor base de <b>Operadores por bloque</b>.<br>Ejemplo:<br><code>2026-04-22,2026-04-30,10</code><br><code>2026-05-01,2026-05-10,14</code></div>
+        <label>Perfil de operadores</label>
+        <textarea id="opsProfile" placeholder="2026-04-22,2026-04-30,10&#10;2026-05-01,2026-05-10,14"></textarea>
+        <div id="opsProfileSummary" class="small" style="margin-top:6px;color:#93c5fd"></div>
+      </details>
+      <details><summary>Inicio forzado de fabricación por resina</summary>
+        <div class="small" style="margin:6px 0">Define la fecha mínima desde la cual cada familia resinosa puede comenzar a fabricarse. Si queda en blanco, se asume disponibilidad inmediata. Esta restricción solo bloquea la <b>fabricación</b>; no bloquea el uso de stock inicial ya disponible.</div>
+        <div class="row" style="margin-top:8px">
+          <div><label>BF01 desde</label><input id="fs_BF01" type="date"></div>
+          <div><label>BF02 desde</label><input id="fs_BF02" type="date"></div>
+          <div><label>BF03 desde</label><input id="fs_BF03" type="date"></div>
+          <div><label>MX1 A desde</label><input id="fs_MX1A" type="date"></div>
+          <div><label>MX1 B desde</label><input id="fs_MX1B" type="date"></div>
+          <div><label>MX2 A desde</label><input id="fs_MX2A" type="date"></div>
+          <div><label>MX2 B desde</label><input id="fs_MX2B" type="date"></div>
+          <div><label>Wurth BF01 desde</label><input id="fs_WUR_BF01" type="date"></div>
+        </div>
+      </details>
+            <details open><summary>📦 Pedidos S&OP</summary>
+        <div class="small" style="margin-bottom:8px;color:#93c5fd">Ingresa los pedidos de la reunión S&OP. Las metas se calculan automáticamente.</div>
+        <div class="small" style="margin:-2px 0 8px;color:#86efac">Prioridad kit pedido: define el <b>orden exacto</b> en que quieres empujar las familias dentro de ese ETD. Formato sugerido: <b>MX2_5&gt;MX2_10&gt;MX1_5&gt;MX1_10</b> o <b>DURAFAST&gt;WUR&gt;BF03</b>. El motor trabajará en <b>foco duro por pedido</b>: mientras exista una familia pendiente en la secuencia, bloqueará las familias futuras y los pedidos posteriores para concentrar semi elaborados y armado en la <b>primera familia pendiente</b> antes de pasar a la siguiente del mismo pedido.</div>
+        <div style="overflow-x:auto;max-height:340px;border:1px solid #1c2e55;border-radius:8px;margin-bottom:8px">
+          <table id="ordersTable" style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:#0b1322;position:sticky;top:0;z-index:2">
+              <th style="padding:6px 8px;color:#6b82aa;text-align:left;min-width:120px;font-size:12px">Fecha ETD</th>
+              <th style="padding:6px 8px;color:#6b82aa;text-align:left;min-width:160px;font-size:12px">Cliente</th>
+              <th style="padding:6px 4px;color:#e87722;text-align:center;min-width:60px;font-size:12px">BF03</th>
+              <th style="padding:6px 4px;color:#e87722;text-align:center;min-width:60px;font-size:12px">BF01</th>
+              <th style="padding:6px 4px;color:#e87722;text-align:center;min-width:60px;font-size:12px">BF02</th>
+              <th style="padding:6px 4px;color:#9c27b0;text-align:center;min-width:60px;font-size:12px">Wurth</th>
+              <th style="padding:6px 4px;color:#8a8d90;text-align:center;min-width:60px;font-size:12px">MX1 5k</th>
+              <th style="padding:6px 4px;color:#8a8d90;text-align:center;min-width:60px;font-size:12px">MX1 10k</th>
+              <th style="padding:6px 4px;color:#5ba3cf;text-align:center;min-width:60px;font-size:12px">MX2 5k</th>
+              <th style="padding:6px 4px;color:#5ba3cf;text-align:center;min-width:60px;font-size:12px">MX2 10k</th>
+              <th style="padding:6px 8px;color:#22c55e;text-align:left;min-width:180px;font-size:12px">Prioridad kit pedido</th>
+              <th style="padding:6px 4px;color:#93c5fd;text-align:center;min-width:70px;font-size:12px">Fijar</th>
+              <th style="padding:6px;width:30px"></th>
+            </tr></thead>
+            <tbody id="ordersBody"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn" style="background:#22c55e;color:#fff;padding:6px 14px;font-size:12px;border-radius:6px;font-weight:700" onclick="addOrder()">➕ Agregar pedido</button>
+          <button class="btn" style="background:#3b82f6;color:#fff;padding:6px 14px;font-size:12px;border-radius:6px;font-weight:700" onclick="calcGoalsFromOrders()">🎯 Calcular metas</button>
+          <button class="btn" style="background:#f59e0b;color:#000;padding:6px 14px;font-size:12px;border-radius:6px;font-weight:700" onclick="checkFeasibility()">⚡ Factibilidad rápida</button>
+          <button class="btn" style="background:#7c3aed;color:#fff;padding:6px 14px;font-size:12px;border-radius:6px;font-weight:700" onclick="freezeApprovedPrefix()">🔒 Congelar aprobados</button>
+          <button class="btn" style="background:#475569;color:#fff;padding:6px 14px;font-size:12px;border-radius:6px;font-weight:700" onclick="clearFrozenBaseline()">🧹 Limpiar congelamiento</button>
+        </div>
+        <div style="margin-top:8px;padding:8px 10px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px">
+          <label style="display:flex;gap:8px;align-items:center;color:#dbe8ff;font-size:12px;margin:0">
+            <input id="useFrozenPrefix" type="checkbox" checked onchange="renderFreezeStatus();updateEngineFlags()">
+            Usar prefijo congelado al replanificar
+          </label>
+          <div class="small" style="margin-top:6px;color:#93c5fd">Marca como <b>Fijar</b> los pedidos comercialmente comprometidos y luego congela el plan aprobado actual. Desde esa fecha el motor replanifica solo hacia adelante.</div>
+        </div>
+        <div id="freezeStatus" style="margin-top:8px"></div>
+        <div id="feasibilityReport" style="margin-top:8px"></div>
+      </details>
+      <details open><summary>Objetivos de kits</summary>
+        <div class="row" style="margin-top:8px">
+          <div><label>BF01</label><input id="g_BF01" type="number" value="3000"></div>
+          <div><label>BF03</label><input id="g_BF03" type="number" value="2000"></div>
+          <div><label>BF02</label><input id="g_BF02" type="number" value="0"></div>
+          <div><label>Wurth</label><input id="g_WUR" type="number" value="0"></div>
+          <div><label>MX1 5 kg</label><input id="g_MX1_5" type="number" value="900"></div>
+          <div><label>MX1 10 kg</label><input id="g_MX1_10" type="number" value="835"></div>
+          <div><label>MX2 5 kg</label><input id="g_MX2_5" type="number" value="0"></div>
+          <div><label>MX2 10 kg</label><input id="g_MX2_10" type="number" value="0"></div>
+        </div>
+      </details>
+      <details><summary>Prioridad forzada de arranque</summary>
+        <div class="small" style="margin:6px 0">Si todos estos valores están en 0, se usa el motor automático actual. Si alguno es mayor que 0, se activa la prioridad forzada de arranque respetando igualmente la lógica global de kits, operadores y bloques.</div>
+        <div class="row" style="margin-top:8px">
+          <div><label>BF01</label><input id="p_BF01" type="number" value="0"></div>
+          <div><label>BF02</label><input id="p_BF02" type="number" value="0"></div>
+          <div><label>BF03</label><input id="p_BF03" type="number" value="0"></div>
+          <div><label>Wurth</label><input id="p_WUR" type="number" value="0"></div>
+          <div><label>MX1 A</label><input id="p_MX1A" type="number" value="0"></div>
+          <div><label>MX1 B</label><input id="p_MX1B" type="number" value="0"></div>
+          <div><label>MX2 A</label><input id="p_MX2A" type="number" value="0"></div>
+          <div><label>MX2 B</label><input id="p_MX2B" type="number" value="0"></div>
+        </div>
+      </details>
+      <details><summary>Prioridad forzada de armado de kit</summary>
+        <div class="small" style="margin:6px 0">Permite forzar el orden de <b>armado de kits</b> sin cambiar la lógica de fabricación. Usa el mismo criterio: 1 = máxima prioridad. Si todos están en 0, el motor decide automáticamente.</div>
+        <div class="row" style="margin-top:8px">
+          <div><label>BF01</label><input id="pk_BF01" type="number" value="0"></div>
+          <div><label>BF02</label><input id="pk_BF02" type="number" value="0"></div>
+          <div><label>BF03</label><input id="pk_BF03" type="number" value="0"></div>
+          <div><label>Wurth</label><input id="pk_WUR" type="number" value="0"></div>
+          <div><label>MX1 5 kg</label><input id="pk_MX1_5" type="number" value="0"></div>
+          <div><label>MX1 10 kg</label><input id="pk_MX1_10" type="number" value="0"></div>
+          <div><label>MX2 5 kg</label><input id="pk_MX2_5" type="number" value="0"></div>
+          <div><label>MX2 10 kg</label><input id="pk_MX2_10" type="number" value="0"></div>
+        </div>
+      </details>
+      <details><summary>Stock inicial editable</summary>
+        <div class="small" style="margin:6px 0">Carga automática desde TXT de SAP disponible abajo. <b>No son duplicados:</b> los ítems <b>envasados base</b> (sin etiqueta) alimentan a los ítems <b>etiquetados/listos</b>. Para BF01/BF02/BF03, la resina envasada normal y la resina P/E se suman en un solo pool base al cargar TXT. Los kits iniciales pueden cargarse manualmente y, desde TXT SAP, se calculan como <b>PT + PF</b> cuando exista ese mapeo compuesto.</div>
+        <div class="row" id="stockGrid"></div><div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="sapFile" type="file" accept=".txt" style="max-width:260px"><button type="button" class="btn-secondary" onclick="loadSapTxt()">Cargar TXT SAP</button></div>
+      </details>
+      <div class="small" id="sapInfo" style="margin-top:8px;color:#9fb0da"></div>
+      <div class="btns" style="margin-top:12px">
+        <button class="btn-secondary" onclick="regenerateCalendar()">Regenerar calendario</button>
+        <button class="btn-primary" onclick="runScenario()">▶ Ejecutar escenario</button>
+        <button class="btn-accent" onclick="exportCSV()">Exportar CSV</button>
+        <button class="btn-red" onclick="resetDefaults()">Restablecer</button>
+      </div>
+      <div id="engineFlags" class="status" style="margin-top:8px;background:rgba(110,168,254,.08);color:#dbe8ff">Motor: Heurístico ETD v52 | Simulación S&OP: activa</div><div id="status" class="status">Listo para ejecutar.</div>
+    </div></div>
+
+    <!-- RIGHT PANEL -->
+    <div>
+      <div class="cards">
+        <div class="card"><div class="k">Kits logrados</div><div class="v" id="kpi_total">0</div></div>
+        <div class="card"><div class="k">Cumpl. global</div><div class="v" id="kpi_fill">0%</div></div>
+        <div class="card"><div class="k">Primer kit</div><div class="v" id="kpi_first">-</div></div>
+        <div class="card"><div class="k">Último cierre</div><div class="v" id="kpi_last">-</div></div>
+        <div class="card"><div class="k">Vulnera restricciones</div><div class="v" id="kpi_viol">0</div></div>
+      </div>
+      <div class="tabs">
+        <div class="tab active" data-view="resumen">Resumen</div>
+        <div class="tab" data-view="avance">Avance</div>
+        <div class="tab" data-view="simulacion" style="color:#ffb454;font-weight:800">🔬 Simulación</div>
+        <div class="tab" data-view="programacion">Programación</div>
+        <div class="tab" data-view="gantt">📊 Gantt</div>
+        <div class="tab" data-view="inventario">Inventario</div>
+        <div class="tab" data-view="stockfinal">Stock final</div>
+        <div class="tab" data-view="reales">Real vs Plan</div>
+        <div class="tab" data-view="kpis">📊 KPIs</div>
+        <div class="tab" data-view="abast" style="color:#56d4c8;font-weight:800">📦 Abastecimiento</div>
+        <div class="tab" data-view="calendario">Calendario</div>
+      </div>
+      <div id="view_resumen" class="view active panel"><h2>Resumen ejecutivo</h2><div class="body" id="resumenBody"></div>
+        <div class="btns" style="padding:10px 16px"><button class="btn-accent" onclick="exportResumenEjecutivoXLS()">📥 Exportar Resumen Ejecutivo con SAP (Excel)</button></div>
+      </div>
+      <div id="view_avance" class="view panel"><h2>Avance de kits</h2><div class="body table-wrap"><table id="avanceTable"></table></div></div>
+      <div id="view_simulacion" class="view panel"><h2>🔬 Simulación S&OP</h2><div class="body" id="simBody">
+        <div class="note" style="margin-bottom:12px">
+          <b>Reunión S&OP:</b> ¿Cuánto me piden? ¿Cuánto puedo entregar? ¿Cuándo tendría todo? ¿Qué me queda después de despachar?<br>
+          <b>Uso:</b> Modifica operadores o fechas ETD → Ejecutar escenario → Esta pestaña se actualiza automáticamente.
+        </div>
+        <div class="btns" style="margin-bottom:10px">
+          <button class="btn-primary" onclick="runSimAnalysis()">🔄 Análisis sensibilidad operadores (8-15)</button>
+          <button class="btn-accent" onclick="exportSimXLS()">📥 Exportar simulación Excel</button>
+        </div>
+        <div id="simETD"></div>
+        <div id="simOps"></div>
+      </div></div>
+      <div id="view_programacion" class="view panel"><h2>Programación por bloque</h2><div class="body"><div class="small" style="margin-bottom:8px">Esta tabla muestra solo el plan programado. No incluye el stock inicial de kits terminados ya disponibles.</div><div class="table-wrap"><table id="progTable"></table></div></div></div>
+      <div id="view_gantt" class="view panel"><h2>📊 Carta Gantt de Producción</h2><div class="body">
+        <div class="gantt-legend">
+          <span><i style="background:#e87722"></i> BF03 / naranjo</span>
+          <span><i style="background:#8a8d90"></i> BF01 y MX1 / gris</span>
+          <span><i style="background:#5ba3cf"></i> BF02 y MX2 / celeste</span>
+          <span><i style="background:#e87722"></i> Solventes</span>
+          <span><i style="background:#4caf50"></i> Imp. Goma</span>
+          <span><i style="background:#ffc107"></i> Fierros A/B</span>
+          <span><i style="background:#4a4a4a"></i> Cat BF03</span>
+          <span style="margin-left:auto"><b>Celda = operadores + unidades · encabezado con día</b></span>
+        </div>
+        <div style="margin-bottom:8px"><button class="btn-accent" onclick="exportGanttExcel()">📥 Exportar Gantt a Excel</button></div>
+        <div class="gantt-wrap" id="ganttContainer"></div>
+      </div></div>
+      <div id="view_inventario" class="view panel"><h2>Inventario dinámico y despachos</h2><div class="body" id="invWrap"></div></div>
+      <div id="view_stockfinal" class="view panel"><h2>Stock final</h2><div class="body" id="stockFinalWrap"></div></div>
+      <div id="view_reales" class="view panel"><h2>Real vs Plan</h2><div class="body">
+        <div class="edit-note">Registra las cantidades reales producidas por día. Los datos se guardan en el archivo compartido al presionar "💾 Guardar al Compartido".</div>
+        <div id="actualsInfo" class="small" style="margin-bottom:8px"></div>
+        <div class="btns" style="margin-bottom:8px">
+          <button class="btn-accent" onclick="exportActualsCSV()">Exportar reales CSV</button>
+          <button class="btn-accent" onclick="exportSnapshotCSV()">Exportar plan-real CSV</button>
+        </div>
+        <div class="table-wrap" style="max-height:350px"><table id="actualsTable"></table></div>
+        <div style="margin-top:12px" class="table-wrap"><table id="kpiTable"></table></div>
+      </div></div>
+      <div id="view_kpis" class="view panel"><h2>📊 KPIs de Producción</h2><div class="body" id="kpiChartsBody"></div></div>
+      <div id="view_abast" class="view panel"><h2>📦 Abastecimiento Mensual</h2><div class="body" id="abastBody">
+        <div class="note" style="margin-bottom:12px">
+          <b>Reunión Logística:</b> Consumos de materias primas e insumos para los próximos meses.<br>
+          <b>Modo 1 (Teórico):</b> Cálculo matemático puro — demanda → BOM → batches necesarios. No depende de la capacidad ni del motor heurístico.<br>
+          <b>Modo 2 (Plan Real):</b> Extrae los datos del plan ejecutado (pestaña Resumen). Usa el stock real al cierre de cada mes según la planificación con capacidad, cuellos de botella y secuencia real.<br>
+          <b>Importante:</b> Para usar el Modo 2, primero ejecuta el escenario principal (▶ Ejecutar escenario).
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+          <button onclick="runAbastecimiento()" style="padding:10px 18px;font-size:13px;font-weight:700;border-radius:8px;cursor:pointer;border:2px solid #22c55e;background:rgba(34,197,94,.12);color:#45d483">🔄 Modo 1: Calcular teórico (matemática pura)</button>
+          <button onclick="runAbastReal()" style="padding:10px 18px;font-size:13px;font-weight:700;border-radius:8px;cursor:pointer;border:2px solid #3b82f6;background:rgba(59,130,246,.12);color:#6ea8fe">📊 Modo 2: Extraer del plan ejecutado (corte mensual)</button>
+          <button onclick="exportAbastXLS()" style="padding:10px 18px;font-size:13px;font-weight:700;border-radius:8px;cursor:pointer;border:2px solid #f59e0b;background:rgba(245,158,11,.12);color:#fbbf24">📥 Exportar a Excel</button>
+        </div>
+        <div id="abastResults"></div>
+      </div></div>
+      <div id="view_calendario" class="view panel"><h2>Calendario editable</h2><div class="body table-wrap"><table id="calTable"></table></div></div>
+    </div>
+  </div>
+</div>
+
+<script src="Planner_V109_motor.js"></script>
+</body>
+</html>

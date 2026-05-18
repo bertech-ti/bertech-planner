@@ -1,0 +1,3536 @@
+
+// ═══════════════════════════════════════════════════
+// CONSTANTS (identical to v14)
+// ═══════════════════════════════════════════════════
+const STOCK_KEYS=['res_bf03','res_bf03_labeled','res_bf01','res_bf01_labeled','res_bf02','res_bf02_labeled','pot_bf03_prep','pot_bf01_prep','pot_bf02_prep','res_wur','pot_wur_prep','env_solv','solv_flex_prep','solv_dur_prep','solv_wur_prep','imp_goma_filled','imp_goma_prep','imp_goma_wur_prep','cat_bf03','cat0102_filled','cat0102_prep','cat_wur_prep','impfa_filled','impfa_prep','impfb_filled','impfb_prep','dur1a','dur1b','dur2a','dur2b','balde5_prep','balde10_prep','balde5mx2_prep','balde10mx2_prep','paleta_cortada','brocha_con_logo','brocha_limpia','res_bf03_revisada','cat_bf03_revisado','res_condoneada_bf01','res_condoneada_bf02','res_condoneada_wur','imp_condoneado_ab','kit_bf03','kit_bf01','kit_bf02','kit_wur','kit_mx1_5','kit_mx1_10','kit_mx2_5','kit_mx2_10'];
+const FAMILIES={
+ // v100.5: el BOM de kit considera solo los componentes terminales que realmente entran al armado.
+ // Cuando existe una operación previa de transformación (condoneado, revisión, etiquetado), el kit consume
+ // la salida terminal de esa transformación y no el intermedio para evitar doble conteo.
+ // Los envasados intermedios (env_solv, imp_goma_filled, cat0102_filled, impfa_filled, impfb_filled)
+ // se descuentan al etiquetar/transformar y su necesidad se deriva desde los etiquetados consumidores.
+ BF03:{label:'BF03',kitCap:500,kitOps:3,bom:{pot_bf03_prep:1,solv_flex_prep:1,imp_goma_prep:1,paleta_cortada:1,res_bf03_revisada:1,cat_bf03_revisado:1,imp_condoneado_ab:1}},
+ BF01:{label:'BF01',kitCap:840,kitOps:3,bom:{solv_flex_prep:1,imp_goma_prep:1,cat0102_prep:1,res_condoneada_bf01:1}},
+ BF02:{label:'BF02',kitCap:840,kitOps:3,bom:{solv_flex_prep:1,imp_goma_prep:1,cat0102_prep:1,impfa_prep:1,impfb_prep:1,res_condoneada_bf02:1}},
+ MX1_5:{label:'MX1 5',kitCap:300,kitOps:3,bom:{dur1a:1,dur1b:1,solv_dur_prep:2,balde5_prep:1}},
+ MX1_10:{label:'MX1 10',kitCap:300,kitOps:3,bom:{dur1a:2,dur1b:2,solv_dur_prep:2,balde10_prep:1}},
+ MX2_5:{label:'MX2 5',kitCap:300,kitOps:3,bom:{dur2a:1,dur2b:1,solv_dur_prep:2,balde5mx2_prep:1}},
+ MX2_10:{label:'MX2 10',kitCap:300,kitOps:3,bom:{dur2a:2,dur2b:2,solv_dur_prep:2,balde10mx2_prep:1}},
+ WUR:{label:'Wurth',kitCap:840,kitOps:3,bom:{solv_wur_prep:1,imp_goma_wur_prep:1,cat_wur_prep:1,brocha_limpia:1,res_condoneada_wur:1}}
+};
+const KIT_STOCK_MAP={BF03:'kit_bf03',BF01:'kit_bf01',BF02:'kit_bf02',WUR:'kit_wur',MX1_5:'kit_mx1_5',MX1_10:'kit_mx1_10',MX2_5:'kit_mx2_5',MX2_10:'kit_mx2_10'};
+let scenarioInitialStock={};
+const ACTS={
+ ENV_SOLV:{ops:1,cap8:1000,inv:'env_solv',label:'ENVASADO SOLVENTE'},ETI_SOLV_FLEX:{ops:1,cap8:420,inv:'solv_flex_prep',label:'ETIQUETADO SOLVENTE FLEXSOL'},ETI_SOLV_DUR:{ops:1,cap8:420,inv:'solv_dur_prep',label:'ETIQUETADO SOLVENTE DURAFAST'},
+ ENV_IMP_GOMA:{ops:1,cap8:840,inv:'imp_goma_filled',label:'ENVASADO IMPRIMANTE GOMA'},ETI_IMP_GOMA:{ops:1,cap8:420,inv:'imp_goma_prep',label:'ETIQUETADO IMPRIMANTE GOMA'},
+ CAT_BF03:{ops:2,cap8:400,inv:'cat_bf03',label:'CATALIZADOR BF03 ENV/ET'},ENV_IMP_FA:{ops:1,cap8:400,inv:'impfa_filled',label:'ENVASADO IMP FIERRO A'},ETI_IMP_FA:{ops:1,cap8:600,inv:'impfa_prep',label:'ETIQUETADO IMP FIERRO A'},
+ ENV_IMP_FB:{ops:1,cap8:400,inv:'impfb_filled',label:'ENVASADO IMP FIERRO B'},ETI_IMP_FB:{ops:1,cap8:600,inv:'impfb_prep',label:'ETIQUETADO IMP FIERRO B'},
+ ETI_POTE_BF03:{ops:1,cap8:520,inv:'pot_bf03_prep',label:'ETIQUETADO POTE BF03'},ETI_POTE_BF01:{ops:1,cap8:840,inv:'pot_bf01_prep',label:'ETIQUETADO POTE BF01'},ETI_POTE_BF02:{ops:1,cap8:840,inv:'pot_bf02_prep',label:'ETIQUETADO POTE BF02'},
+ ENV_CAT_0102:{ops:1,cap8:840,inv:'cat0102_filled',label:'ENVASADO CATALIZADOR BF01/02'},ETI_CAT_0102:{ops:1,cap8:420,inv:'cat0102_prep',label:'ETIQUETADO CATALIZADOR BF01/02'},
+ ETI_BALDE5:{ops:1,cap8:400,inv:'balde5_prep',label:'ETIQUETADO BALDE DURAFAST MX1 5KG'},ETI_BALDE10:{ops:1,cap8:300,inv:'balde10_prep',label:'ETIQUETADO BALDE DURAFAST MX1 10KG'},ETI_BALDE5_MX2:{ops:1,cap8:400,inv:'balde5mx2_prep',label:'ETIQUETADO BALDE MX2 5KG'},ETI_BALDE10_MX2:{ops:1,cap8:300,inv:'balde10mx2_prep',label:'ETIQUETADO BALDE MX2 10KG'},
+ ETI_POTE_WUR:{ops:1,cap8:840,inv:'pot_wur_prep',label:'ETIQUETADO POTE WURTH'},
+ ETI_SOLV_WUR:{ops:1,cap8:420,inv:'solv_wur_prep',label:'ETIQUETADO SOLVENTE WURTH'},
+ ETI_IMP_GOMA_WUR:{ops:1,cap8:420,inv:'imp_goma_wur_prep',label:'ETIQUETADO IMPRIMANTE GOMA WURTH'},
+ ETI_CAT_WUR:{ops:1,cap8:420,inv:'cat_wur_prep',label:'ETIQUETADO CATALIZADOR WURTH'},
+ CORTE_PALETA:{ops:1,cap8:2400,inv:'paleta_cortada',label:'CORTE PALETAS 8.5 BF03'},
+ CONDONEADO_BF01:{ops:2,cap8:960,inv:'res_condoneada_bf01',label:'CONDONEADO RESINA BF01'},
+ CONDONEADO_BF02:{ops:2,cap8:960,inv:'res_condoneada_bf02',label:'CONDONEADO RESINA BF02'},
+ CONDONEADO_WUR:{ops:2,cap8:960,inv:'res_condoneada_wur',label:'CONDONEADO RESINA WURTH'},
+ CONDONEADO_IMP:{ops:1,cap8:800,inv:'imp_condoneado_ab',label:'CONDONEADO IMP FIERRO A/B'},
+ LIMPIEZA_BROCHA:{ops:2,cap8:4000,inv:'brocha_limpia',label:'LIMPIEZA BROCHAS'},
+ REVISION_RES_BF03:{ops:1,cap8:480,inv:'res_bf03_revisada',label:'REVISIÓN RESINAS BF03'},
+ REVISION_CAT_BF03:{ops:1,cap8:1360,inv:'cat_bf03_revisado',label:'REVISIÓN CATALIZADOR BF03'}
+};
+const MAX_PARALLEL={ENV_SOLV:2,ENV_IMP_GOMA:2,ETI_SOLV_FLEX:4,ETI_SOLV_DUR:4,CAT_BF03:1,ENV_IMP_FA:2,ETI_IMP_FA:4,ENV_IMP_FB:3,ETI_IMP_FB:4,ETI_POTE_BF03:4,ETI_POTE_BF01:4,ETI_POTE_BF02:4,ETI_POTE_WUR:4,ENV_CAT_0102:2,ETI_CAT_0102:4,ETI_CAT_WUR:4,ETI_SOLV_WUR:4,ETI_IMP_GOMA_WUR:4,ETI_BALDE5:2,ETI_BALDE10:1,ETI_BALDE5_MX2:2,ETI_BALDE10_MX2:2,CORTE_PALETA:4,CONDONEADO_BF01:4,CONDONEADO_BF02:4,CONDONEADO_WUR:4,CONDONEADO_IMP:4,LIMPIEZA_BROCHA:4,REVISION_RES_BF03:4,REVISION_CAT_BF03:4};
+const FABACTS={BF03:{b1_ops:3,env_ops:7,output:690,inv:'res_bf03',label:'FABRICACION BF03',env_label:'ENVASADO BF03'},BF01:{b1_ops:3,env_ops:7,output:1000,inv:'res_bf01',label:'FABRICACION BF01',env_label:'ENVASADO BF01'},BF02:{b1_ops:3,env_ops:7,output:1000,inv:'res_bf02',label:'FABRICACION BF02',env_label:'ENVASADO BF02'},MX1A:{b1_ops:3,env_ops:5,output:514,inv:'dur1a',label:'FABRICACION MX1 A',env_label:'ENVASADO MX1 A'},MX1B:{b1_ops:3,env_ops:5,output:514,inv:'dur1b',label:'FABRICACION MX1 B',env_label:'ENVASADO MX1 B'},MX2A:{b1_ops:3,env_ops:5,output:514,inv:'dur2a',label:'FABRICACION MX2 A',env_label:'ENVASADO MX2 A'},MX2B:{b1_ops:3,env_ops:5,output:514,inv:'dur2b',label:'FABRICACION MX2 B',env_label:'ENVASADO MX2 B'},WUR_BF01:{b1_ops:3,env_ops:7,output:1000,inv:'res_wur',label:'FABRICACION WURTH (BF01)',env_label:'ENVASADO WURTH (BF01)'}};
+const FAMILY_PREP_ACTS={BF03:['ETI_POTE_BF03','ENV_SOLV','ETI_SOLV_FLEX','ENV_IMP_GOMA','ETI_IMP_GOMA','ENV_IMP_FA','ETI_IMP_FA','ENV_IMP_FB','ETI_IMP_FB','CAT_BF03','CORTE_PALETA','CONDONEADO_IMP','REVISION_RES_BF03','REVISION_CAT_BF03'],BF01:['ETI_POTE_BF01','ENV_SOLV','ETI_SOLV_FLEX','ENV_IMP_GOMA','ETI_IMP_GOMA','ENV_CAT_0102','ETI_CAT_0102','CONDONEADO_BF01'],BF02:['ETI_POTE_BF02','ENV_SOLV','ETI_SOLV_FLEX','ENV_IMP_GOMA','ETI_IMP_GOMA','ENV_CAT_0102','ETI_CAT_0102','ENV_IMP_FA','ETI_IMP_FA','ENV_IMP_FB','ETI_IMP_FB','CONDONEADO_BF02'],WUR:['ETI_POTE_WUR','ENV_SOLV','ETI_SOLV_WUR','ENV_IMP_GOMA','ETI_IMP_GOMA_WUR','ENV_CAT_0102','ETI_CAT_WUR','CONDONEADO_WUR','LIMPIEZA_BROCHA'],MX1_5:['ENV_SOLV','ETI_SOLV_DUR','ETI_BALDE5'],MX1_10:['ENV_SOLV','ETI_SOLV_DUR','ETI_BALDE10'],MX2_5:['ENV_SOLV','ETI_SOLV_DUR','ETI_BALDE5_MX2'],MX2_10:['ENV_SOLV','ETI_SOLV_DUR','ETI_BALDE10_MX2']};
+// Prerequisitos: actividad solo puede ejecutarse si hay stock del insumo requerido
+const ACT_PREREQS={
+  CONDONEADO_BF01:['res_bf01','pot_bf01_prep'],
+  CONDONEADO_BF02:['res_bf02','pot_bf02_prep'],
+  CONDONEADO_WUR:['res_wur','pot_wur_prep'],
+  CONDONEADO_IMP:['impfa_prep','impfb_prep'],
+  REVISION_RES_BF03:['res_bf03'],
+  REVISION_CAT_BF03:['cat_bf03'],
+  LIMPIEZA_BROCHA:['brocha_con_logo'],
+  ETI_SOLV_FLEX:['env_solv'],
+  ETI_SOLV_DUR:['env_solv'],
+  ETI_SOLV_WUR:['env_solv'],
+  ETI_IMP_GOMA:['imp_goma_filled'],
+  ETI_IMP_GOMA_WUR:['imp_goma_filled'],
+  ETI_CAT_0102:['cat0102_filled'],
+  ETI_CAT_WUR:['cat0102_filled'],
+  ETI_IMP_FA:['impfa_filled'],
+  ETI_IMP_FB:['impfb_filled']
+};
+
+function getCondoneadoLimit(act,stock){
+  const prereqs=ACT_PREREQS[act];
+  if(!prereqs)return Infinity;
+  return Math.min(...prereqs.map(p=>Number(stock[p]||0)));
+}
+// Source material consumed by condoneado/revision activities
+const ACT_SOURCE_CONSUME={
+  CONDONEADO_BF01:{consume:['res_bf01','pot_bf01_prep'],produce:'res_condoneada_bf01'},
+  CONDONEADO_BF02:{consume:['res_bf02','pot_bf02_prep'],produce:'res_condoneada_bf02'},
+  CONDONEADO_WUR:{consume:['res_wur','pot_wur_prep'],produce:'res_condoneada_wur'},
+  CONDONEADO_IMP:{consume:['impfa_prep','impfb_prep'],produce:'imp_condoneado_ab'},
+  REVISION_RES_BF03:{consume:'res_bf03',produce:'res_bf03_revisada'},
+  REVISION_CAT_BF03:{consume:'cat_bf03',produce:'cat_bf03_revisado'},
+  LIMPIEZA_BROCHA:{consume:'brocha_con_logo',produce:'brocha_limpia'},
+  ETI_SOLV_FLEX:{consume:'env_solv',produce:'solv_flex_prep'},
+  ETI_SOLV_DUR:{consume:'env_solv',produce:'solv_dur_prep'},
+  ETI_SOLV_WUR:{consume:'env_solv',produce:'solv_wur_prep'},
+  ETI_IMP_GOMA:{consume:'imp_goma_filled',produce:'imp_goma_prep'},
+  ETI_IMP_GOMA_WUR:{consume:'imp_goma_filled',produce:'imp_goma_wur_prep'},
+  ETI_CAT_0102:{consume:'cat0102_filled',produce:'cat0102_prep'},
+  ETI_CAT_WUR:{consume:'cat0102_filled',produce:'cat_wur_prep'},
+  ETI_IMP_FA:{consume:'impfa_filled',produce:'impfa_prep'},
+  ETI_IMP_FB:{consume:'impfb_filled',produce:'impfb_prep'}
+};
+
+// v100: mapeo inverso de envasados intermedios compartidos → etiquetados consumidores.
+// Esto obliga a programar el bulk correcto antes del etiquetado y evita depender de heurísticas u holguras.
+const BULK_TO_LABELS_MAP={
+  env_solv:[
+    {act:'ETI_SOLV_FLEX',out:'solv_flex_prep',applies:fam=>['BF01','BF02','BF03'].includes(fam)},
+    {act:'ETI_SOLV_DUR',out:'solv_dur_prep',applies:fam=>['MX1_5','MX1_10','MX2_5','MX2_10'].includes(fam)},
+    {act:'ETI_SOLV_WUR',out:'solv_wur_prep',applies:fam=>fam==='WUR'}
+  ],
+  imp_goma_filled:[
+    {act:'ETI_IMP_GOMA',out:'imp_goma_prep',applies:fam=>['BF01','BF02','BF03'].includes(fam)},
+    {act:'ETI_IMP_GOMA_WUR',out:'imp_goma_wur_prep',applies:fam=>fam==='WUR'}
+  ],
+  cat0102_filled:[
+    {act:'ETI_CAT_0102',out:'cat0102_prep',applies:fam=>['BF01','BF02'].includes(fam)},
+    {act:'ETI_CAT_WUR',out:'cat_wur_prep',applies:fam=>fam==='WUR'}
+  ],
+  impfa_filled:[{act:'ETI_IMP_FA',out:'impfa_prep',applies:fam=>['BF02','BF03'].includes(fam)}],
+  impfb_filled:[{act:'ETI_IMP_FB',out:'impfb_prep',applies:fam=>['BF02','BF03'].includes(fam)}]
+};
+const BULK_KEYS=Object.keys(BULK_TO_LABELS_MAP);
+function isBulkSemiKey(k){return BULK_KEYS.includes(k);}
+
+const FAMILY_FABS={BF03:['BF03'],BF01:['BF01'],BF02:['BF02'],WUR:['WUR_BF01'],MX1_5:['MX1A','MX1B'],MX1_10:['MX1A','MX1B'],MX2_5:['MX2A','MX2B'],MX2_10:['MX2A','MX2B']};
+const STOCK_META=[
+  {key:'res_bf01',label:'Resina envasada Flexsol BF01 (pool para etiquetar)',sap:'PS001REF001',used:true},
+  {key:'res_bf01_labeled',label:'Resina envasada Flexsol BF01 P/E (se suma al pool)',sap:'PS002REF001',used:false},
+  {key:'res_bf02',label:'Resina envasada Flexsol BF02 (pool para etiquetar)',sap:'PS001REF002',used:true},
+  {key:'res_bf02_labeled',label:'Resina envasada Flexsol BF02 P/E (se suma al pool)',sap:'PS002REF002',used:false},
+  {key:'res_bf03',label:'Resina envasada Flexsol BF03 (pool para etiquetar)',sap:'PS001REF003',used:true},
+  {key:'res_bf03_labeled',label:'Resina envasada Flexsol BF03 P/E (se suma al pool)',sap:'PS002REF003',used:false},
+  {key:'pot_bf01_prep',label:'Pote/resina BF01 etiquetado (requerido antes de condonear)',sap:'PS000PER001',used:true},
+  {key:'pot_bf02_prep',label:'Pote/resina BF02 etiquetado (requerido antes de condonear)',sap:'PS000PER002',used:true},
+  {key:'pot_bf03_prep',label:'Pote etiquetado resina BF03 40oz',sap:'PS000PER003',used:true},
+  {key:'env_solv',label:'Solvente envasado base sin etiqueta 60ml (pool Flexsol/Wurth/Durafast)',sap:'PS002SOD002',used:true},
+  {key:'solv_flex_prep',label:'Botella llena etiquetada solvente Flexsol',sap:'PS000BEF001',used:true},
+  {key:'solv_dur_prep',label:'Botella llena etiquetada solvente Durafast',sap:'IN000BET011',used:true},
+  {key:'imp_goma_filled',label:'Imprimante goma envasado base sin etiqueta (pool Flexsol/Wurth)',sap:'PS001IEG001',used:true},
+  {key:'imp_goma_prep',label:'Botella llena etiquetada imprimante goma Flexsol',sap:'PS000BET006',used:true},
+  {key:'cat0102_filled',label:'Catalizador BF01/02 envasado base sin etiqueta (pool Flexsol/Wurth)',sap:'PS001CAF001',used:true},
+  {key:'cat0102_prep',label:'Botella llena etiquetada catalizador BF01/02 Flexsol',sap:'PS000BET007',used:true},
+  {key:'cat_bf03',label:'Catalizador BF03 envasado',sap:'PS001CAF003',used:true},
+  {key:'impfa_filled',label:'Imprimante fierro A envasado',sap:'PS001IEF001',used:true},
+  {key:'impfa_prep',label:'Botella etiquetada fierro A',sap:'PS001IET001',used:true},
+  {key:'impfb_filled',label:'Imprimante fierro B envasado',sap:'PS001IEF002',used:true},
+  {key:'impfb_prep',label:'Botella etiquetada fierro B',sap:'PS001IET002',used:true},
+  {key:'dur1a',label:'Componente A MX1 2.5kg',sap:'PS002RED001',used:true},
+  {key:'dur1b',label:'Componente B MX1 2.5kg',sap:'PS002END001',used:true},
+  {key:'dur2a',label:'Componente A MX2 2.5kg',sap:'PS002RED002',used:true},
+  {key:'dur2b',label:'Componente B MX2 2.5kg',sap:'PS002END002',used:true},
+  {key:'balde5_prep',label:'Balde etiquetado MX1 5kg',sap:'PS000BET002',used:true},
+  {key:'balde10_prep',label:'Balde etiquetado MX1 10kg',sap:'PS000BET005',used:true},
+  {key:'balde5mx2_prep',label:'Balde etiquetado MX2 5kg',sap:'PS000BET004',used:true},
+  {key:'balde10mx2_prep',label:'Balde etiquetado MX2 10kg',sap:'PS000BET003',used:true},
+  {key:'kit_bf03',label:'Kit armado BF03 (stock inicial manual / SAP PT+PF)',sap:'',used:true,manual:true},
+  {key:'kit_bf01',label:'Kit armado BF01 (stock inicial manual / SAP PT+PF)',sap:'',used:true,manual:true},
+  {key:'kit_bf02',label:'Kit armado BF02 (stock inicial manual / SAP PT+PF)',sap:'',used:true,manual:true},
+  {key:'kit_mx1_5',label:'Kit armado MX1 5kg (stock inicial manual / SAP PT+PF)',sap:'',used:true,manual:true},
+  {key:'kit_mx1_10',label:'Kit armado MX1 10kg (stock inicial manual / SAP PT+PF)',sap:'',used:true,manual:true},
+  {key:'kit_mx2_5',label:'Kit armado MX2 5kg (stock inicial manual / SAP PT+PF)',sap:'',used:true,manual:true},
+  {key:'kit_mx2_10',label:'Kit armado MX2 10kg (stock inicial manual / SAP PT+PF)',sap:'',used:true,manual:true},
+  {key:'res_wur',label:'Resina envasada Wurth BF01 lista para condoneado/kit',sap:'PS005REW001',used:true},
+  {key:'pot_wur_prep',label:'Pote/resina Wurth etiquetado (requerido antes de condonear)',sap:'PS000PEW001',used:true},
+  {key:'solv_wur_prep',label:'Botella llena etiquetada solvente Wurth',sap:'PS005BEW001',used:true},
+  {key:'imp_goma_wur_prep',label:'Botella llena etiquetada imprimante goma Wurth',sap:'PS005BEW006',used:true},
+  {key:'cat_wur_prep',label:'Botella llena etiquetada catalizador Wurth',sap:'PS005BEW007',used:true},
+  {key:'kit_wur',label:'Kit armado Wurth (stock inicial manual / SAP PT+PF)',sap:'PF005WUR001',used:true,manual:true},
+  {key:'paleta_cortada',label:'Paleta cortada 8.5 BF03',sap:'IN001REV002',used:true},
+  {key:'brocha_con_logo',label:'Brocha con logo (materia prima)',sap:'IN000BRO001',used:true},
+  {key:'brocha_limpia',label:'Brocha limpia sin logo (para kit Wurth)',sap:'',used:true},
+  {key:'res_bf03_revisada',label:'Resina BF03 revisada',sap:'',used:true},
+  {key:'cat_bf03_revisado',label:'Catalizador BF03 revisado',sap:'',used:true},
+  {key:'res_condoneada_bf01',label:'Resina BF01 condoneada',sap:'',used:true},
+  {key:'res_condoneada_bf02',label:'Resina BF02 condoneada',sap:'',used:true},
+  {key:'res_condoneada_wur',label:'Resina Wurth condoneada',sap:'',used:true},
+  {key:'imp_condoneado_ab',label:'Imprimante fierro A/B condoneado',sap:'',used:true}
+];
+
+const SAP_COMPOUND_MAP={
+  kit_bf01:['PF001BF1001','PT001BF1001'],
+  kit_bf02:['PF001BF2001','PT001BF2001'],
+  kit_bf03:['PF001BF3001','PT001BF3001'],
+  kit_mx1_5:['PF002MX1002','PS002KAD001','PT101MX1002'],
+  kit_mx1_10:['PF002MX1003','PS002KAD002','PT101MX1003'],
+  kit_mx2_5:['PF002MX2002','PS002KAD003','PT102MX2002'],
+  kit_mx2_10:['PF002MX2003','PS002KAD004','PT102MX2003'],
+  kit_wur:['PF005WUR001','PT002BW1001']
+};
+
+// ═══════════════════════════════════════════════════
+// LIMPIEZA DE FABRICACIÓN — Reglas de transición v53
+// ═══════════════════════════════════════════════════
+// Grupo de resina: FLEXSOL = BF01,BF02,WUR(BF01) | FLEXSOL_BF03 = BF03 | DURAFAST = MX1A,MX1B,MX2A,MX2B
+function fabGroup(fabId){
+  if(/^BF0[12]$/.test(fabId)||fabId==='WUR_BF01')return 'FLEXSOL_0102';
+  if(fabId==='BF03')return 'FLEXSOL_BF03';
+  if(/MX[12][AB]/.test(fabId))return 'DURAFAST';
+  return 'OTHER';
+}
+function fabPart2(fabId){
+  if(/A$/.test(fabId))return 'A';
+  if(/B$/.test(fabId))return 'B';
+  return '';
+}
+// Returns {mezclador:{ops,min,deferToNextDay?}, extrusor:{ops,min}} or null for each
+function getCleaningNeeded(prevFab, nextFab, day, nextWorkDay, isLastBatch){
+  if(!prevFab) return null;
+  const prevG=fabGroup(prevFab), nextG=nextFab?fabGroup(nextFab):null;
+  const prevP=fabPart2(prevFab), nextP=nextFab?fabPart2(nextFab):'';
+  let mezc=null, extr=null;
+
+  const isDurAtoA=(prevG==='DURAFAST'&&nextG==='DURAFAST'&&prevP==='A'&&nextP==='A');
+  // Mezclador: siempre limpiar salvo DURAFAST A→A consecutivo.
+  // Si es último batch también se limpia. Viernes -> sábado.
+  if(!isDurAtoA && (nextFab || isLastBatch)){
+    mezc={ops:2,min:30};
+    if(day && ['Vie'].includes(day.dow||'') && nextWorkDay && ['Sáb','Sab'].includes(nextWorkDay.dow||'')){
+      mezc.deferToNextDay=true;
+    }
+  }
+
+  // Extrusor: reglas confirmadas por usuario
+  const prevFlexAny=(prevG==='FLEXSOL_0102'||prevG==='FLEXSOL_BF03');
+  const nextFlexAny=(nextG==='FLEXSOL_0102'||nextG==='FLEXSOL_BF03');
+  if(prevG==='DURAFAST' && nextG==='DURAFAST'){
+    if(prevP==='A' && nextP==='B') extr={ops:2,min:30};
+    else if(prevP==='B' && nextP==='A') extr={ops:2,min:30};
+    else extr=null; // A→A y B→B
+  }else if(prevG==='FLEXSOL_BF03' && nextG==='FLEXSOL_0102'){
+    extr={ops:2,min:30}; // BF03 -> BF01/02/WUR
+  }else if(prevG==='FLEXSOL_0102' && nextG==='FLEXSOL_BF03'){
+    extr=null; // BF01/02/WUR -> BF03
+  }else if(prevG==='FLEXSOL_0102' && nextG==='FLEXSOL_0102'){
+    extr=null; // BF01/02/WUR -> BF01/02/WUR
+  }else if(prevG==='FLEXSOL_BF03' && nextG==='FLEXSOL_BF03'){
+    extr=null; // BF03 -> BF03
+  }else if(prevFlexAny && nextG==='DURAFAST'){
+    extr={ops:3,min:30}; // Flexsol/WUR -> Durafast
+  }else if(prevG==='DURAFAST' && nextFlexAny){
+    extr={ops:3,min:30}; // Durafast -> Flexsol/WUR
+  }
+
+  if(!mezc && !extr) return null;
+  return {mezclador:mezc, extrusor:extr};
+}
+
+const FORCED_FAB_TO_FAMILY={WUR_BF01:'WUR',MX1A:'MX1_5',MX1B:'MX1_10',MX2A:'MX2_5',MX2B:'MX2_10'};
+
+// ═══════════════════════════════════════════════════
+// MAPEO DE CÓDIGOS SAP v52 — Para trazabilidad en reportes
+// ═══════════════════════════════════════════════════
+// Código SAP por actividad de semielaborado (producto que generan)
+const ACT_SAP={
+  'ENV_SOLV':'PS002SOD002',
+  'ETI_SOLV_FLEX':'PS000BEF001',
+  'ETI_SOLV_DUR':'IN000BET011',
+  'ENV_IMP_GOMA':'PS001IEG001',
+  'ETI_IMP_GOMA':'PS000BET006',
+  'CAT_BF03':'PS001CAF003',
+  'ENV_IMP_FA':'PS001IEF001',
+  'ETI_IMP_FA':'PS001IET001',
+  'ENV_IMP_FB':'PS001IEF002',
+  'ETI_IMP_FB':'PS001IET002',
+  'ETI_POTE_BF03':'PS000PER003',
+  'ETI_POTE_BF01':'PS000PER001',
+  'ETI_POTE_BF02':'PS000PER002',
+  'ENV_CAT_0102':'PS001CAF001',
+  'ETI_CAT_0102':'PS000BET007',
+  'ETI_BALDE5':'PS000BET002',
+  'ETI_BALDE10':'PS000BET005',
+  'ETI_BALDE5_MX2':'PS000BET004',
+  'ETI_BALDE10_MX2':'PS000BET003',
+  'ETI_POTE_WUR':'PS000PEW001',
+  'ETI_SOLV_WUR':'PS005BEW001',
+  'ETI_IMP_GOMA_WUR':'PS005BEW006',
+  'ETI_CAT_WUR':'PS005BEW007',
+  'CORTE_PALETA':'IN001REV002',
+  'CONDONEADO_BF01':'','CONDONEADO_BF02':'','CONDONEADO_WUR':'',
+  'CONDONEADO_IMP':'',
+  'LIMPIEZA_BROCHA':'IN000BRO001',
+  'REVISION_RES_BF03':'',
+  'REVISION_CAT_BF03':''
+};
+// Código SAP por fabricación de resina (material que generan)
+const FAB_SAP={
+  'BF03':'PS001REF003',
+  'BF01':'PS001REF001',
+  'BF02':'PS001REF002',
+  'MX1A':'PS002RED001',
+  'MX1B':'PS002END001',
+  'MX2A':'PS002RED002',
+  'MX2B':'PS002END002',
+  'WUR_BF01':'PS005REW001'
+};
+// Código SAP de kit terminado por familia (primario)
+const KIT_SAP={
+  'BF03':'PF001BF3001',
+  'BF01':'PF001BF1001',
+  'BF02':'PF001BF2001',
+  'MX1_5':'PF002MX1002',
+  'MX1_10':'PS002KAD002',
+  'MX2_5':'PS002KAD003',
+  'MX2_10':'PS002KAD004',
+  'WUR':'PF005WUR001'
+};
+// Helper: obtener código SAP por clave de stock
+function sapForKey(invKey){const m=STOCK_META.find(x=>x.key===invKey);return (m&&m.sap)||'';}
+
+function sapCodeForEntry(e){
+  if(!e) return '';
+  if(e.type==='fab') return FAB_SAP[e.id]||'';
+  if(e.type==='env_res'){
+    const map={ENV_BF03:'PS001REF003',ENV_BF01:'PS001REF001',ENV_BF02:'PS001REF002',ENV_WUR_BF01:'PS005REW001',ENV_MX1A:'PS002RED001',ENV_MX1B:'PS002END001',ENV_MX2A:'PS002RED002',ENV_MX2B:'PS002END002'};
+    return map[e.id]||'';
+  }
+  if(e.type==='kit') return KIT_SAP[e.family]||'';
+  return ACT_SAP[e.id]||'';
+}
+function internalCodeForEntry(e){
+  if(!e) return '';
+  if(e.type==='fab') return e.id||'';
+  if(e.type==='env_res') return e.id||'';
+  if(e.type==='kit') return e.family||e.id||'';
+  return e.id||'';
+}
+
+let calendarData=[],lastResult=null,sharedActuals={};let lastCalendarSignature='';let stockLoadSummary={loaded:false,direct:0,compound:0,rows:0,source:'manual'};
+function parseOpsProfile(text){
+  const rows=[];
+  String(text||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean).forEach((line,idx)=>{
+    const parts=line.split(',').map(s=>s.trim());
+    if(parts.length<3)return;
+    const start=parts[0], end=parts[1], ops=Number(parts[2]||0);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || !(ops>0)) return;
+    rows.push({start,end,ops,lineNo:idx+1});
+  });
+  rows.sort((a,b)=>String(a.start).localeCompare(String(b.start))||String(a.end).localeCompare(String(b.end)));
+  return rows;
+}
+function getOpsForDate(date,baseOps,profile){
+  const d=String(date||'');
+  for(const r of (profile||[])) if(d>=String(r.start) && d<=String(r.end)) return Number(r.ops||baseOps||0);
+  return Number(baseOps||0);
+}
+function renderOpsProfileSummary(){
+  const el=document.getElementById('opsProfileSummary'); if(!el)return;
+  const base=Number(document.getElementById('ops')?.value||0);
+  const rows=parseOpsProfile(document.getElementById('opsProfile')?.value||'');
+  if(!rows.length){el.innerHTML='Sin tramos definidos. Se usará <b>'+base+'</b> operadores en todo el horizonte.'; return;}
+  el.innerHTML='Base: <b>'+base+'</b> operadores. Tramos activos: '+rows.map(r=>'<b>'+r.start+'</b> a <b>'+r.end+'</b> = <b>'+r.ops+'</b>').join(' · ');
+}
+function opsProfileLabel(res){ if(!res) return ''; const ranges=(res.opsProfile||[]); if(!ranges.length) return String(res.opsTotal||0)+' operadores'; const uniq=[...new Set([Number(res.opsTotal||0)].concat(ranges.map(r=>Number(r.ops||0))))].sort((a,b)=>a-b); return 'Base '+(res.opsTotal||0)+' ops · tramos '+uniq.join('/'); }
+function effectiveOpsForEntryInBlock(e,hrs){ const ops=Number(e&&e.ops||0); const blockHrs=Number(hrs||0); if(blockHrs<=0) return ops; if(e&&e.partialOps&&Number(e.duration_min||0)>0){ return +(ops*(Number(e.duration_min||0)/(blockHrs*60))).toFixed(2); } if(e&&e.isPostClean&&Number(e.postCleanHrs||0)>0){ return +(ops*(Number(e.postCleanHrs||0)/blockHrs)).toFixed(2); } return ops; }
+function entryAppliesToBlock(e,bn){ return (e.block===bn)||(bn!=='B1'&&e.block==='B2+B3'); }
+function blockHoursForLabel(day,bn){ return bn==='B1'?Number(day.b1||0):bn==='B2'?Number(day.b2||0):Number(day.b3||0); }
+function computeBlockOpsEffectiveUsage(entries,day){ const out={B1:0,B2:0,B3:0}; ['B1','B2','B3'].forEach(bn=>{ const hrs=blockHoursForLabel(day,bn); entries.forEach(e=>{ if(entryAppliesToBlock(e,bn)) out[bn]+=effectiveOpsForEntryInBlock(e,hrs); }); out[bn]=+out[bn].toFixed(2); }); return out; }
+function computePhysicalPeakForBlock(entries,day,bn){
+  let regular=0, initialPartial=0, postClean=0;
+  (entries||[]).forEach(e=>{
+    if(!entryAppliesToBlock(e,bn)) return;
+    const ops=Number(e&&e.ops||0);
+    if(e&&e.isPostClean){ postClean+=ops; return; }
+    if((e&&e.partialOps)||Number(e&&e.duration_min||0)>0){ initialPartial+=ops; return; }
+    regular+=ops;
+  });
+  return +Math.max(regular+initialPartial, regular+postClean).toFixed(2);
+}
+function computeBlockOpsUsage(entries,day){ const out={B1:0,B2:0,B3:0}; ['B1','B2','B3'].forEach(bn=>{ out[bn]=computePhysicalPeakForBlock(entries,day,bn); }); return out; }
+function computePeakOpsUsage(entries,day){ const out={b1:0,b2:0,b3:0}; ['B1','B2','B3'].forEach((bn)=>{ const k=bn.toLowerCase(); out[k]=computePhysicalPeakForBlock(entries,day,bn); }); return out; }
+function currentBlockUsage(entries,day,bn){ return computePhysicalPeakForBlock(entries,day,bn); }
+function currentBlockRemaining(entries,day,bn,dayOps){ return +(Math.max(0,Number(dayOps||0)-currentBlockUsage(entries,day,bn))).toFixed(2); }
+function entryFitsBlock(entries,day,bn,dayOps,entry){ return computePhysicalPeakForBlock([...(entries||[]),{...entry}],day,bn)<=Number(dayOps||0)+1e-9; }
+
+
+// ═══════════════════════════════════════════════════
+// SHARED STATE (replaces localStorage)
+// ═══════════════════════════════════════════════════
+function collectFullState(){
+  const params={};
+  ['mode','ops','opsProfile','start','end','holidays','g_BF01','g_BF03','g_BF02','g_WUR','g_MX1_5','g_MX1_10','g_MX2_5','g_MX2_10','p_BF01','p_BF02','p_BF03','p_MX1A','p_MX1B','p_MX2A','p_MX2B','pk_BF01','pk_BF02','pk_BF03','pk_WUR','pk_MX1_5','pk_MX1_10','pk_MX2_5','pk_MX2_10','fs_BF01','fs_BF02','fs_BF03','fs_MX1A','fs_MX1B','fs_MX2A','fs_MX2B','fs_WUR_BF01','useFrozenPrefix'].forEach(id=>{
+    const el=document.getElementById(id);if(el)params[id]=(el.type==='checkbox'?String(!!el.checked):el.value);});
+  const stock={};STOCK_META.filter(m=>m.used).forEach(m=>{const el=document.getElementById('s_'+m.key);if(el)stock[m.key]=el.value;});
+  return{
+    saved_at:new Date().toISOString(),saved_by:navigator.userAgent.slice(0,40),engine_version:ENGINE_VERSION,
+    params,stock,actuals:sharedActuals,
+    calendar:calendarData,
+    orders:getOrdersForState(),
+    frozenBaseline,
+    lastPlan:lastResult?markPlanOrderSignature({goals:lastResult.goals,kits:lastResult.kits,displayKits:lastResult.displayKits,progress:lastResult.progress,violations:lastResult.violations,opsTotal:lastResult.opsTotal,initialStock:lastResult.initialStock,schedule:lastResult.schedule?.map(d=>({date:d.date,entries:d.entries,primary:d.primary,secondary:d.secondary,stock:d.stock,kits:d.kits}))}):null
+  };
+}
+function applyFullState(state){
+  if(state.params)Object.entries(state.params).forEach(([k,v])=>{const el=document.getElementById(k);if(!el)return; if(el.type==='checkbox')el.checked=String(v)==='true'; else el.value=v;});
+  if(state.stock)Object.entries(state.stock).forEach(([k,v])=>{const el=document.getElementById('s_'+k);if(el)el.value=v;});
+  if(state.actuals)sharedActuals=state.actuals;
+  if(state.orders)loadOrdersFromState(state.orders);
+  syncGoalsFromOrders({invalidatePlan:false, orders:state.orders});
+  frozenBaseline=state.frozenBaseline||null;
+  if(state.calendar&&state.calendar.length)calendarData=state.calendar;
+  const versionMismatch=!!(frozenBaseline && state.engine_version && state.engine_version!==ENGINE_VERSION);
+  const legacyFrozen=!!(frozenBaseline && !state.engine_version);
+  if(versionMismatch||legacyFrozen){
+    frozenBaseline=null;
+    const uf=document.getElementById('useFrozenPrefix');
+    if(uf)uf.checked=false;
+  }
+  renderFreezeStatus();
+  renderOpsProfileSummary();
+  const suffix=(versionMismatch||legacyFrozen)?' | prefijo congelado desactivado por cambio de lógica del motor':'';
+  document.getElementById('shareInfo').textContent='Cargado: '+new Date(state.saved_at).toLocaleString('es-CL')+suffix;
+}
+function saveSharedState(){
+  const state=collectFullState();
+  const json=JSON.stringify(state,null,2);
+  const blob=new Blob([json],{type:'application/json'});
+  saveFileAs(blob,'mps_datos.json','Estado compartido MPS');
+  setStatus('💾 Estado guardado como mps_datos.json — guárdalo en tu carpeta compartida de OneDrive.');
+}
+function loadSharedState(){
+  const file=document.getElementById('loadSharedFile').files[0];
+  if(!file){setStatus('Selecciona el archivo mps_datos.json primero.');return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{const state=JSON.parse(e.target.result);applyFullState(state);
+    renderCalendar();
+    // If JSON has a lastPlan with schedule, offer to use it directly (from Gantt Interactiva)
+    if(state.lastPlan&&state.lastPlan.schedule&&state.lastPlan.schedule.some(d=>d.entries&&d.entries.length>0)){
+      const compatible=planCompatibleWithOrders(state.lastPlan, state.orders||[]);
+      if(compatible){
+        if(confirm('Este archivo contiene un plan con programación coherente con los pedidos actuales. ¿Usar esta programación directamente (Sí) o recalcular desde el motor (No)?')){
+          loadPlanFromJSON(state);
+          setStatus('✅ Plan cargado desde Gantt/JSON — reportes actualizados');
+          return;
+        }
+      }else{
+        setStatus('ℹ️ El archivo trae un lastPlan antiguo que no coincide con los pedidos/metas actuales. Se recalculará para evitar incoherencias.');
+      }
+    }
+    runScenario();
+    setStatus('✅ Estado cargado desde '+file.name);}
+    catch(err){setStatus('❌ Error: '+err.message);}
+  };reader.readAsText(file);
+}
+
+function loadPlanFromJSON(state){
+  const plan=state.lastPlan;
+  const goals=computeGoalsFromOrders(state.orders||orders||[], true);
+  const initialStock=plan.initialStock||getStocks();
+  scenarioInitialStock=copyObj(initialStock);
+  const opsTotal=plan.opsTotal||parseNum('ops'); const opsProfile=parseOpsProfile(document.getElementById('opsProfile')?.value||'');
+  const schedule=plan.schedule||[];
+  
+  // ═══ RECALCULATE INVENTORY from schedule entries ═══
+  const stock=copyObj(initialStock);
+  const kits={};const progress=[];
+  const kitFamMap={KIT_BF03:'BF03',KIT_BF01:'BF01',KIT_BF02:'BF02',KIT_WUR:'WUR',KIT_MX1_5:'MX1_5',KIT_MX1_10:'MX1_10',KIT_MX2_5:'MX2_5',KIT_MX2_10:'MX2_10'};
+  const envInvMap={ENV_BF03:'res_bf03',ENV_BF01:'res_bf01',ENV_BF02:'res_bf02',ENV_WUR_BF01:'res_wur',ENV_MX1A:'dur1a',ENV_MX1B:'dur1b',ENV_MX2A:'dur2a',ENV_MX2B:'dur2b'};
+  // Initialize kits from initial stock
+  Object.entries(KIT_STOCK_MAP).forEach(([fam,sk])=>{kits[fam]=Number(stock[sk]||0);});
+  
+  for(const day of schedule){
+    if(!day.entries||!day.entries.length){day.stock=copyObj(stock);day.kits=copyObj(kits);continue;}
+    const processed=new Set();
+    for(const e of day.entries){
+      const ekey=e.id+'_'+e.block;if(processed.has(ekey))continue;processed.add(ekey);
+      if(e.type==='fab'){
+        // Fab produces raw resin (separate from envasado)
+        // Don't add to envasado stock - tracked separately
+      } else if(e.type==='env_res'){
+        // Envasado converts raw resin → envasado stock
+        const invKey=envInvMap[e.id];
+        if(invKey)stock[invKey]=(stock[invKey]||0)+Number(e.units||0);
+      } else if(e.type==='semi'){
+        const qty=Number(e.units||0);
+        applyAnalyticsSourceConsume(stock,e.id,qty);
+        const ad=ACTS[e.id];
+        if(ad&&ad.inv)stock[ad.inv]=(stock[ad.inv]||0)+qty;
+      } else if(e.type==='kit'){
+        const fam=kitFamMap[e.id];
+        if(fam&&FAMILIES[fam]){
+          const kitQty=Number(e.units||0);
+          // Consume BOM components
+          Object.entries(FAMILIES[fam].bom).forEach(([comp,mult])=>{
+            stock[comp]=Math.max(0,(stock[comp]||0)-kitQty*mult);
+          });
+          // Produce kits
+          kits[fam]=(kits[fam]||0)+kitQty;
+          stock[KIT_STOCK_MAP[fam]]=(stock[KIT_STOCK_MAP[fam]]||0)+kitQty;
+        }
+      }
+    }
+    day.stock=copyObj(stock);day.kits=copyObj(kits);
+    // Build progress
+    const pt={date:day.date};
+    Object.keys(goals).forEach(f=>{pt[f]=kits[f]||0;});
+    progress.push(pt);
+  }
+  
+  const displayKits=copyObj(plan.displayKits||kits);
+  const violations=Number(plan.violations||0);
+  schedule.forEach(d=>{if(d&&!('opsLimit' in d))d.opsLimit=getOpsForDate(d.date,opsTotal,opsProfile);});
+  lastResult=markPlanOrderSignature({goals,initialStock,opsTotal,opsProfile,schedule,progress:(plan.progress||progress),finalStock:copyObj(stock),kits,displayKits,violations});
+  renderResult();
+  setStatus('✅ Plan cargado desde Gantt — inventario recalculado');
+}
+
+
+// ═══════════════════════════════════════════════════
+// PEDIDOS S&OP MODULE
+// ═══════════════════════════════════════════════════
+let orders=[];
+let frozenBaseline=null;
+const FAMS_ORDER=['BF03','BF01','BF02','WUR','MX1_5','MX1_10','MX2_5','MX2_10'];
+
+function stableStringify(v){if(Array.isArray(v))return '['+v.map(stableStringify).join(',')+']';if(v&&typeof v==='object'){return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stableStringify(v[k])).join(',')+'}';}return JSON.stringify(v);} 
+function getOrdersSignature(src){const arr=(src||orders||[]).map(o=>({_uid:String(o._uid||''),date:String(o.date||''),client:String(o.client||''),kitPriorityOrder:String(o.kitPriorityOrder||''),BF03:Number(o.BF03||0),BF01:Number(o.BF01||0),BF02:Number(o.BF02||0),WUR:Number(o.WUR||0),MX1_5:Number(o.MX1_5||0),MX1_10:Number(o.MX1_10||0),MX2_5:Number(o.MX2_5||0),MX2_10:Number(o.MX2_10||0)}));return stableStringify(arr);} 
+function getOrderMatchKey(o,idx=0){return String((o&&o._uid)||((o&&o.date)||'')+'|'+((o&&o.client)||'')+'|'+idx);} 
+function getOrdersMap(src){const m={};(src||[]).forEach((o,i)=>{m[getOrderMatchKey(o,i)]=o||{};});return m;}
+function isDemandRelaxationAgainstBaseline(baseOrders,currOrders){const baseMap=getOrdersMap(baseOrders||[]);let ok=true;(currOrders||[]).forEach((o,i)=>{const b=baseMap[getOrderMatchKey(o,i)];if(!b){const sum=FAMS_ORDER.reduce((a,f)=>a+Number(o&&o[f]||0),0);if(sum>0)ok=false;return;}if(String(o.date||'')!==String(b.date||'')||String(o.client||'')!==String(b.client||''))ok=false;FAMS_ORDER.forEach(f=>{if(Number(o&&o[f]||0)>Number(b&&b[f]||0))ok=false;});});return ok;}
+function getPlanScore(plan,srcOrders){const rows=getProbablePlanOrderStatus(plan,srcOrders||orders||[]);const miss=rows.filter(r=>!r.ok).length;const delay=rows.reduce((a,r)=>a+(Number.isFinite(r.delayDays)?Number(r.delayDays||0):999),0);const fill=rows.reduce((a,r)=>a+Number(r.fill||0),0);const probable=rows.reduce((a,r)=>a+(r.probableDate?1:0),0);return {miss,delay,fill,probable};}
+function preferPlan(planA,planB,srcOrders){if(!planA)return planB;if(!planB)return planA;const a=getPlanScore(planA,srcOrders),b=getPlanScore(planB,srcOrders);if(a.miss!==b.miss)return a.miss<b.miss?planA:planB;if(a.delay!==b.delay)return a.delay<b.delay?planA:planB;if(a.probable!==b.probable)return a.probable>b.probable?planA:planB;if(a.fill!==b.fill)return a.fill>b.fill?planA:planB;const va=Number(planA.violations||0),vb=Number(planB.violations||0);return va<=vb?planA:planB;}
+function computeGoalsFromOrders(srcOrders,useEndDate=true){const totals=makeFamilyMap();const endDate=document.getElementById('end')?.value||'';(srcOrders||orders||[]).forEach(o=>{if(!o)return;const include=(!o.date)||(!useEndDate)||(!endDate)||String(o.date)<=String(endDate);if(!include)return;FAMS_ORDER.forEach(f=>{totals[f]+=Number(o[f]||0);});});return totals;} 
+function goalsEqual(a,b){return FAMS_ORDER.every(f=>Number((a&&a[f])||0)===Number((b&&b[f])||0));}
+function invalidateCurrentPlan(reason=''){lastResult=null;document.getElementById('result').innerHTML='';document.getElementById('feasibilityReport').innerHTML='';const sim=document.getElementById('simulationWrap');if(sim)sim.style.display='none';if(reason)setStatus(reason);} 
+function syncGoalsFromOrders(opts){opts=opts||{};const computed=computeGoalsFromOrders(opts.orders, opts.useEndDate!==false);setGoalFields(computed);const stale=lastResult&&!goalsEqual(lastResult.goals||{},computed);if(stale&&opts.invalidatePlan!==false){invalidateCurrentPlan('♻️ Metas recalculadas desde Pedidos S&OP. El plan anterior quedó obsoleto y debe replanificarse.');}return computed;} 
+function currentGoalsMatchOrders(){return goalsEqual(getGoals(),computeGoalsFromOrders());}
+function planCompatibleWithOrders(plan,srcOrders){if(!plan)return false;const computed=computeGoalsFromOrders(srcOrders,true);const pgoals=plan.goals||{};return goalsEqual(computed,pgoals)&&(!plan.orderSignature || plan.orderSignature===getOrdersSignature(srcOrders));}
+function markPlanOrderSignature(obj){if(obj)obj.orderSignature=getOrdersSignature();return obj;}
+
+function genOrderUid(i=0){return 'ORD_'+Date.now()+'_'+i+'_'+Math.random().toString(36).slice(2,8)}
+function ensureOrdersMeta(){
+  orders=(orders||[]).map((o,i)=>Object.assign({date:'',oc:'',client:'',locked:false,kitPriorityOrder:''},o||{}));
+  orders.forEach((o,i)=>{if(!o._uid)o._uid=genOrderUid(i); if(typeof o.locked==='undefined')o.locked=false;});
+}
+function getLockedOrders(){ensureOrdersMeta(); return orders.filter(o=>o.locked&&o.date);}
+function getLockedFrontierDate(){const arr=getLockedOrders().map(o=>String(o.date||'')).filter(Boolean).sort(); return arr.length?arr[arr.length-1]:'';}
+function renderFreezeStatus(){
+  const el=document.getElementById('freezeStatus'); if(!el)return;
+  ensureOrdersMeta();
+  const locked=getLockedOrders();
+  const frontier=getLockedFrontierDate();
+  const using=!!(frozenBaseline&&frozenBaseline.frontierDate&&document.getElementById('useFrozenPrefix')?.checked);
+  if(!locked.length && !frozenBaseline){
+    el.innerHTML='<div class="small" style="color:#6b82aa">Sin pedidos fijados ni prefijo congelado.</div>';
+    return;
+  }
+  let h='';
+  if(locked.length){
+    h+=`<div style="padding:8px 10px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.22);border-radius:8px;color:#e9d5ff;font-size:12px;margin-bottom:6px">Pedidos fijados: <b>${locked.length}</b>${frontier?` · Último ETD fijado: <b>${frontier}</b>`:''}</div>`;
+  }
+  if(frozenBaseline&&frozenBaseline.frontierDate){
+    h+=`<div style="padding:8px 10px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.22);border-radius:8px;color:#c8f7da;font-size:12px">Prefijo congelado hasta <b>${frozenBaseline.frontierDate}</b>${using?' · activo en la replanificación':' · guardado pero no activo'}</div>`;
+  }
+  el.innerHTML=h;
+}
+
+function freezeApprovedPrefix(){
+  ensureOrdersMeta();
+  if(!getLockedOrders().length){setStatus('Marca al menos un pedido como Fijar antes de congelar el plan aprobado.');renderFreezeStatus();return;}
+  if(!lastResult)runScenario();
+  if(!lastResult||!lastResult.schedule||!lastResult.schedule.length){setStatus('No hay un plan vigente para congelar. Ejecuta primero el escenario aprobado.');return;}
+  const frontier=getLockedFrontierDate();
+  const prefix=(lastResult.schedule||[]).filter(d=>String(d.date||'')<=frontier).map(copyObj);
+  if(!prefix.length){setStatus('No encontré un prefijo de plan para la fecha fijada.');return;}
+  const frontierProgress=((lastResult.progress||[]).filter(p=>String(p.date||'')<=frontier).slice(-1)[0])||{date:frontier};
+  const kitsProduced=makeFamilyMap(); FAMS_ORDER.forEach(f=>{kitsProduced[f]=Number(frontierProgress[f]||0);});
+  const frontierDay=(prefix.filter(d=>String(d.date||'')===frontier).slice(-1)[0])||prefix[prefix.length-1];
+  frozenBaseline={
+    frontierDate:frontier,
+    createdAt:new Date().toISOString(),
+    lockedOrdersSnapshot:copyObj(getLockedOrders()),
+    baselineOrdersSnapshot:copyObj(orders||[]),
+    baselineOrderSignature:getOrdersSignature(orders||[]),
+    schedulePrefix:prefix,
+    progressPrefix:(lastResult.progress||[]).filter(p=>String(p.date||'')<=frontier).map(copyObj),
+    stockAfterFrontier:copyObj((frontierDay&&frontierDay.stock)||lastResult.initialStock||getStocks()),
+    kitsProducedAfterFrontier:kitsProduced,
+    baselinePlanFull:copyObj(markPlanOrderSignature(lastResult))
+  };
+  renderFreezeStatus();
+  updateEngineFlags('Prefijo congelado hasta '+frontier);
+  setStatus('🔒 Plan aprobado congelado. Al sumar nuevos pedidos, el motor replanificará desde '+frontier+' hacia adelante.');
+}
+
+function clearFrozenBaseline(){
+  frozenBaseline=null;
+  renderFreezeStatus();
+  updateEngineFlags();
+  setStatus('🧹 Congelamiento eliminado. El motor vuelve a planificar todo el horizonte.');
+}
+
+
+function ensureFrozenBaselineFromLocked(){
+  ensureOrdersMeta();
+  if(frozenBaseline) return;
+  if(!(document.getElementById('useFrozenPrefix')?.checked)) return;
+  const locked=getLockedOrders();
+  if(!locked.length) return;
+  if(!lastResult || !lastResult.schedule || !lastResult.schedule.length) return;
+  const frontier=getLockedFrontierDate();
+  const prefix=(lastResult.schedule||[]).filter(d=>String(d.date||'')<=frontier).map(copyObj);
+  if(!prefix.length) return;
+  const frontierProgress=((lastResult.progress||[]).filter(p=>String(p.date||'')<=frontier).slice(-1)[0])||{date:frontier};
+  const kitsProduced=makeFamilyMap(); FAMS_ORDER.forEach(f=>{kitsProduced[f]=Number(frontierProgress[f]||0);});
+  const frontierDay=(prefix.filter(d=>String(d.date||'')===frontier).slice(-1)[0])||prefix[prefix.length-1];
+  frozenBaseline={
+    frontierDate:frontier,
+    createdAt:new Date().toISOString(),
+    autoBuilt:true,
+    lockedOrdersSnapshot:copyObj(locked),
+    baselineOrdersSnapshot:copyObj(orders||[]),
+    baselineOrderSignature:getOrdersSignature(orders||[]),
+    schedulePrefix:prefix,
+    progressPrefix:(lastResult.progress||[]).filter(p=>String(p.date||'')<=frontier).map(copyObj),
+    stockAfterFrontier:copyObj((frontierDay&&frontierDay.stock)||lastResult.initialStock||getStocks()),
+    kitsProducedAfterFrontier:kitsProduced,
+    baselinePlanFull:copyObj(markPlanOrderSignature(lastResult))
+  };
+  renderFreezeStatus();
+}
+
+function addOrder(data){
+  ensureOrdersMeta();
+  const o=Object.assign({_uid:genOrderUid(orders.length),locked:false,date:'',oc:'',client:'',kitPriorityOrder:'',BF01:0,BF02:0,BF03:0,WUR:0,MX1_5:0,MX1_10:0,MX2_5:0,MX2_10:0},data||{});
+  orders.push(o);
+  renderOrders();
+  syncGoalsFromOrders();
+}
+
+function removeOrder(idx){
+  orders.splice(idx,1);
+  renderOrders();
+  syncGoalsFromOrders();
+}
+
+function renderOrders(){
+  ensureOrdersMeta();
+  const tb=document.getElementById('ordersBody');
+  const IS='width:100%;font-size:13px;padding:5px 6px;background:#0d1628;color:#eef2fa;border:1px solid #1c2e55;border-radius:5px';
+  const IN=IS+';text-align:right';
+  let h='';
+  orders.forEach((o,i)=>{
+    h+=`<tr style="border-bottom:1px solid #1c2e55">`;
+    h+=`<td style="padding:3px"><input type="date" value="${o.date}" style="${IS}" onchange="orders[${i}].date=this.value;renderFreezeStatus();syncGoalsFromOrders()"></td>`;
+    h+=`<td style="padding:3px"><input type="text" value="${o.client||''}" style="${IS}" onchange="orders[${i}].client=this.value;syncGoalsFromOrders({invalidatePlan:false})" placeholder="Nombre del cliente"></td>`;
+    FAMS_ORDER.forEach(f=>{
+      h+=`<td style="padding:3px"><input type="number" value="${o[f]||''}" min="0" style="${IN}" onchange="orders[${i}]['${f}']=Number(this.value)||0;syncGoalsFromOrders()" placeholder="0"></td>`;
+    });
+    h+=`<td style="padding:3px"><input type="text" value="${(o.kitPriorityOrder||'').replace(/"/g,'&quot;')}" style="${IS}" onchange="orders[${i}].kitPriorityOrder=this.value;syncGoalsFromOrders({invalidatePlan:false})" placeholder="Ej: MX1_5>WUR o DURAFAST>WUR"></td>`;
+    h+=`<td style="padding:3px;text-align:center"><input type="checkbox" ${o.locked?'checked':''} onchange="orders[${i}].locked=this.checked;renderFreezeStatus();syncGoalsFromOrders({invalidatePlan:false})"></td>`;
+    h+=`<td style="padding:3px"><button style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#ef4444;cursor:pointer;font-size:14px;padding:4px 8px;border-radius:5px;font-weight:700" onclick="removeOrder(${i})">✕</button></td>`;
+    h+='</tr>';
+  });
+  if(!orders.length){
+    h='<tr><td colspan="13" style="padding:14px;text-align:center;color:#6b82aa;font-size:13px">Sin pedidos — haz clic en ➕ Agregar pedido</td></tr>';
+  }
+  tb.innerHTML=h;
+  renderFreezeStatus();
+}
+
+function calcGoalsFromOrders(){
+  if(!orders.length){setStatus('Agrega pedidos primero.');return;}
+  const endDate=document.getElementById('end').value;
+  let included=0,excluded=0;
+  (orders||[]).forEach(o=>{ if(!o.date||!endDate||String(o.date)<=String(endDate)) included++; else excluded++; });
+  const totals=syncGoalsFromOrders();
+  setStatus(`🎯 Metas calculadas: ${included} pedidos incluidos${excluded?' ('+excluded+' fuera del rango)':''} — ${Object.entries(totals).filter(([k,v])=>v>0).map(([k,v])=>k.replace('_',' ')+':'+v).join(', ')}`);
+}
+
+function buildCumulativeGoalsUntil(endDate){
+  const totals={};
+  FAMS_ORDER.forEach(f=>{totals[f]=0;});
+  orders.forEach(o=>{
+    if(!o.date || o.date<=endDate){
+      FAMS_ORDER.forEach(f=>{totals[f]+=(Number(o[f])||0);});
+    }
+  });
+  return totals;
+}
+
+function setGoalFields(goals){
+  FAMS_ORDER.forEach(f=>{
+    const el=document.getElementById('g_'+f);
+    if(el)el.value=String(Number(goals[f]||0));
+  });
+}
+
+function summarizeFeasibilityFamilies(goals,result){
+  const met=[],missing=[];
+  FAMS_ORDER.forEach(f=>{
+    const g=Number(goals[f]||0);
+    if(g<=0)return;
+    const got=Number((result&&result.displayKits&&result.displayKits[f])||0);
+    if(got>=g)met.push({fam:f,goal:g,got});
+    else missing.push({fam:f,goal:g,got,delta:g-got});
+  });
+  return {met,missing};
+}
+
+
+function checkFeasibility(){
+  if(!lastResult)runScenario();
+  const status=getProbablePlanOrderStatus(lastResult,orders);
+  if(!status.length){setStatus('No hay pedidos S&OP para evaluar.');document.getElementById('feasibilityReport').innerHTML='';return;}
+  let h='<div style="font-size:11px;font-weight:700;color:#eef2fa;margin-bottom:4px">⚡ CUMPLIMIENTO REAL DEL PLAN ACTUAL POR ETD</div>';
+  let totalReq=0,totalDisp=0;
+  status.forEach(s=>{const risk=s.ok?'ok':'danger';const riskColor=risk==='ok'?'#22c55e':'#ef4444';const riskIcon=risk==='ok'?'✅':'🔴';const lineText=FAMS_ORDER.filter(f=>Number(s.delta[f]||0)>0).map(f=>f.replace('_',' ')+':'+Number((s.dispatched&&s.dispatched[f])||0)+'/'+Number(s.delta[f]||0)).join(' · ');h+=`<div style="display:flex;gap:6px;align-items:center;padding:3px 6px;margin-bottom:2px;background:rgba(${risk==='ok'?'34,197,94':'239,68,68'},.06);border:1px solid rgba(${risk==='ok'?'34,197,94':'239,68,68'},.2);border-radius:5px"><span style="font-size:12px">${riskIcon}</span><span style="font-weight:700;color:${riskColor};min-width:70px">${s.date.slice(5)}</span><span style="color:#eef2fa;flex:1">${s.client||''}</span><span style="color:#6b82aa;font-size:10px">${lineText}</span></div>`;h+=`<div style="font-size:9px;color:${s.ok?'#86efac':'#93c5fd'};padding-left:24px;margin-bottom:2px">Fecha probable completa: ${s.probableDate||'—'}${s.delayDays?` · atraso estimado ${s.delayDays} día(s) hábiles`:''}</div>`;if(!s.ok){h+=`<div style="font-size:9px;color:#ef4444;padding-left:24px;margin-bottom:2px">${s.shortages.map(x=>x.fam.replace('_',' ')+': faltan '+fmt(x.miss,0)).join(' | ')}</div>`;}totalReq+=s.totalReq;totalDisp+=s.totalDisp;});
+  h+=`<div style="margin-top:4px;padding:4px 6px;background:#0d1628;border-radius:5px;font-size:10px;color:#6b82aa">Pedidos evaluados: ${status.length} · Total solicitado: ${fmt(totalReq,0)} kits · Total despachable en fecha: ${fmt(totalDisp,0)} kits · Fill rate ETD: ${totalReq?((100*totalDisp/totalReq).toFixed(1)):'0'}%</div>`;
+  document.getElementById('feasibilityReport').innerHTML=h;
+  setStatus('⚡ Cumplimiento real por ETD actualizado según el plan actual');
+}
+
+// Load/save orders with state
+function getOrdersForState(){ensureOrdersMeta();return orders;}
+function loadOrdersFromState(arr){if(Array.isArray(arr)){orders=arr;ensureOrdersMeta();renderOrders();}}
+
+// Initialize
+renderOrders();
+syncGoalsFromOrders({invalidatePlan:false});
+renderFreezeStatus();
+
+function loadSampleOrders(){
+  orders=[
+    {date:'2026-03-27',oc:'3566_1',client:'Chile - Exp. Marítima',BF01:490,BF02:0,BF03:1000,MX1_5:0,MX1_10:400,MX2_5:0,MX2_10:0},
+    {date:'2026-04-06',oc:'',client:'Rebello (India) - Exp. Aéreo',BF01:10,BF02:20,BF03:20,MX1_5:10,MX1_10:0,MX2_5:0,MX2_10:10},
+    {date:'2026-04-17',oc:'3566_2',client:'Chile - Exp. Marítima',BF01:0,BF02:0,BF03:1500,MX1_5:0,MX1_10:356,MX2_5:0,MX2_10:0},
+    {date:'2026-04-29',oc:'3590',client:'Chile - Exp. Marítima',BF01:1470,BF02:200,BF03:1250,MX1_5:700,MX1_10:168,MX2_5:0,MX2_10:0},
+    {date:'2026-05-04',oc:'',client:'Century (India) - Exp. Marítimo',BF01:200,BF02:100,BF03:200,MX1_5:50,MX1_10:0,MX2_5:50,MX2_10:60},
+    {date:'2026-05-08',oc:'',client:'Australia - Exp. Aérea',BF01:20,BF02:20,BF03:20,MX1_5:1,MX1_10:1,MX2_5:1,MX2_10:1},
+    {date:'2026-05-15',oc:'131',client:'Brasil - Exp. Marítima',BF01:4000,BF02:100,BF03:1120,MX1_5:450,MX1_10:180,MX2_5:120,MX2_10:100},
+    {date:'2026-07-28',oc:'132',client:'Brasil - Exp. Marítima',BF01:4000,BF02:180,BF03:1500,MX1_5:450,MX1_10:120,MX2_5:120,MX2_10:90},
+    {date:'2026-10-06',oc:'133',client:'Brasil - Exp. Marítima',BF01:4000,BF02:150,BF03:1500,MX1_5:400,MX1_10:100,MX2_5:100,MX2_10:90},
+  ];
+  ensureOrdersMeta();
+  renderOrders();
+  setStatus('📋 Ejemplo S&OP cargado con 9 pedidos');
+}
+
+
+function makeFamilyMap(){return{BF03:0,BF01:0,BF02:0,WUR:0,MX1_5:0,MX1_10:0,MX2_5:0,MX2_10:0}}
+function getOrderDispatchMap(srcOrders){
+  const out={};
+  (srcOrders||[]).forEach(o=>{
+    if(!o||!o.date)return;
+    if(!out[o.date])out[o.date]=makeFamilyMap();
+    FAMS_ORDER.forEach(f=>{const q=Number(o[f]||0);if(q>0)out[o.date][f]=(out[o.date][f]||0)+q;});
+  });
+  return out;
+}
+function getOrderMilestones(srcOrders){const byDate={};(srcOrders||[]).forEach(o=>{if(!o||!o.date)return;if(!byDate[o.date])byDate[o.date]={date:o.date,delta:makeFamilyMap(),clients:[]};FAMS_ORDER.forEach(f=>{const q=Number(o[f]||0);if(q>0)byDate[o.date].delta[f]=(byDate[o.date].delta[f]||0)+q;});if(o.client)byDate[o.date].clients.push(o.client);});const rows=Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));let cum=makeFamilyMap();rows.forEach(r=>{FAMS_ORDER.forEach(f=>{cum[f]+=Number(r.delta[f]||0);});r.cumulative=copyObj(cum);r.client=(r.clients||[]).filter(Boolean).join(', ');});return rows;}
+function normalizeFamToken(tok){
+  const t=String(tok||'').trim().toUpperCase().replace(/\s+/g,'').replace(/-/g,'_');
+  const map={BF01:'BF01',BF02:'BF02',BF03:'BF03',WUR:'WUR',WURTH:'WUR',WURTHBF01:'WUR',MX15:'MX1_5',MX1_5:'MX1_5',MX110:'MX1_10',MX1_10:'MX1_10',MX25:'MX2_5',MX2_5:'MX2_5',MX210:'MX2_10',MX2_10:'MX2_10'};
+  return map[t]||'';
+}
+function expandPriorityToken(tok){
+  const t=String(tok||'').trim().toUpperCase().replace(/\s+/g,'').replace(/-/g,'_');
+  if(!t)return [];
+  if(t==='DURAFAST'||t==='DUR')return ['MX1_5','MX1_10','MX2_5','MX2_10'];
+  if(t==='FLEXSOL'||t==='FLEX')return ['BF01','BF02','BF03'];
+  const fam=normalizeFamToken(t);
+  return fam?[fam]:[];
+}
+function parseOrderKitPriorityList(raw){
+  const text=String(raw||'').trim();
+  if(!text)return [];
+  const parts=text.split(/>|,|;|\//).map(s=>s.trim()).filter(Boolean);
+  const out=[]; const seen=new Set();
+  parts.forEach(part=>{expandPriorityToken(part).forEach(f=>{if(!seen.has(f)){seen.add(f);out.push(f);}});});
+  return out;
+}
+function getActiveOrderPriorityContext(dayDate,kits){
+  const rows=getOrderMilestones(getOrdersArray());
+  const available=makeFamilyMap();
+  FAMS_ORDER.forEach(f=>{available[f]=achievedQtyForPlanning(f,kits);});
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i];
+    const prev=copyObj(r.prevCumulative||makeFamilyMap());
+    const remainingThisOrder=makeFamilyMap(); let any=0;
+    FAMS_ORDER.forEach(f=>{
+      const coveredForThis=Math.max(0,Number(available[f]||0)-Number(prev[f]||0));
+      remainingThisOrder[f]=Math.max(0,Number(r.delta[f]||0)-coveredForThis);
+      any+=remainingThisOrder[f];
+    });
+    if(any>0){
+      const ordersToday=(getOrdersArray()||[]).filter(o=>String(o.date||'')===String(r.date||''));
+      const seq=[]; const seen=new Set();
+      ordersToday.forEach(o=>{parseOrderKitPriorityList(o.kitPriorityOrder||'').forEach(f=>{if(Number(r.delta[f]||0)>0&&!seen.has(f)){seen.add(f);seq.push(f);}});});
+      const orderFamilies=FAMS_ORDER.filter(f=>Number(r.delta[f]||0)>0);
+      const focusFamilies=[];
+      if(seq.length){
+        for(const f of seq){
+          if(Number(remainingThisOrder[f]||0)>0){focusFamilies.push(f);break;}
+        }
+      }
+      if(!focusFamilies.length){
+        orderFamilies.forEach(f=>{if(Number(remainingThisOrder[f]||0)>0)focusFamilies.push(f);});
+      }
+      return {date:r.date,row:r,prevCumulative:prev,remainingThisOrder,prioritySequence:seq,focusFamilies,hasFocus:focusFamilies.length>0,orderFamilies};
+    }
+  }
+  return {date:null,row:null,prevCumulative:makeFamilyMap(),remainingThisOrder:makeFamilyMap(),prioritySequence:[],focusFamilies:[],hasFocus:false,orderFamilies:[]};
+}
+function getMilestoneOrderKitPriority(dayDate,kits){
+  const ctx=getActiveOrderPriorityContext(dayDate,kits);
+  const row=(ctx&&ctx.row)||null;
+  if(!row||!row.date)return {};
+  const ordersToday=(getOrdersArray()||[]).filter(o=>String(o.date||'')===String(row.date||''));
+  const priorityMap={};
+  ordersToday.forEach(o=>{
+    const famQty={BF03:Number(o.BF03||0),BF01:Number(o.BF01||0),BF02:Number(o.BF02||0),WUR:Number(o.WUR||0),MX1_5:Number(o.MX1_5||0),MX1_10:Number(o.MX1_10||0),MX2_5:Number(o.MX2_5||0),MX2_10:Number(o.MX2_10||0)};
+    let seq=parseOrderKitPriorityList(o.kitPriorityOrder||'');
+    if(!seq.length) return;
+    seq=seq.filter(f=>Number(famQty[f]||0)>0);
+    seq.forEach((f,idx)=>{
+      const rank=idx+1;
+      if(!priorityMap[f]||rank<priorityMap[f])priorityMap[f]=rank;
+    });
+  });
+  return priorityMap;
+}
+
+function getNearestUnmetMilestone(dayDate,kits){const rows=getOrderMilestones(getOrdersArray());const avail=makeFamilyMap();FAMS_ORDER.forEach(f=>{avail[f]=achievedQtyForPlanning(f,kits);});for(const r of rows){const deficits=makeFamilyMap();let any=0;FAMS_ORDER.forEach(f=>{deficits[f]=Math.max(0,Number(r.cumulative[f]||0)-Number(avail[f]||0));any+=deficits[f];});if(any>0){const daysTo=Math.round((new Date(r.date+'T00:00:00')-new Date(dayDate+'T00:00:00'))/86400000);return {date:r.date,daysTo,deficits,row:r};}}return {date:null,daysTo:999,deficits:makeFamilyMap(),row:null};}
+
+function getNextMilestoneAfter(currentRow,kits){
+  const rows=getOrderMilestones(getOrdersArray());
+  if(!currentRow)return null;
+  const idx=rows.findIndex(r=>r.date===currentRow.date);
+  if(idx<0)return null;
+  for(let i=idx+1;i<rows.length;i++){
+    const r=rows[i];
+    const deficits=makeFamilyMap(); let any=0;
+    FAMS_ORDER.forEach(f=>{deficits[f]=Math.max(0,Number(r.cumulative[f]||0)-(achievedQtyForPlanning(f,kits))); any+=deficits[f];});
+    if(any>0) return {date:r.date,daysTo:Math.round((new Date(r.date+'T00:00:00')-new Date((currentRow&&currentRow.date||r.date)+'T00:00:00'))/86400000),deficits,row:r};
+  }
+  return null;
+}
+function getMilestoneWindow(dayDate,kits){
+  const current=getNearestUnmetMilestone(dayDate,kits);
+  const next=(current&&current.row)?getNextMilestoneAfter(current.row,kits):null;
+  if(next&&dayDate)next.daysTo=Math.round((new Date(next.date+'T00:00:00')-new Date(dayDate+'T00:00:00'))/86400000);
+  return {current,next};
+}
+function getPlanningGoalsForDay(dayDate,globalGoals,kits){
+  const win=getMilestoneWindow(dayDate,kits),m=win.current,n=win.next;
+  const focusCtx=getActiveOrderPriorityContext(dayDate,kits);
+  if(m&&m.row){
+    const pg=makeFamilyMap();
+    const currDefTotal=FAMS_ORDER.reduce((s,f)=>s+Number((m.deficits&&m.deficits[f])||0),0);
+    const strictOrderFocus=!!(focusCtx&&focusCtx.row&&m.row&&focusCtx.row.date===m.row.date&&focusCtx.hasFocus&&focusCtx.prioritySequence&&focusCtx.prioritySequence.length);
+    let nextBlend=!n||!n.row?0:(currDefTotal<=0?0.95:(m.daysTo<=0?0.30:m.daysTo===1?0.22:m.daysTo<=2?0.30:0.45));
+    if(strictOrderFocus && m.daysTo<=4) nextBlend=0;
+    FAMS_ORDER.forEach(f=>{
+      const cur=Math.min(Number(globalGoals[f]||0),Number((m.row.cumulative&&m.row.cumulative[f])||0));
+      const nxt=n&&n.row?Math.min(Number(globalGoals[f]||0),Number((n.row.cumulative&&n.row.cumulative[f])||0)):cur;
+      pg[f]=Math.min(Number(globalGoals[f]||0),cur+Math.max(0,nxt-cur)*nextBlend);
+    });
+    return {goals:pg,milestone:m,nextMilestone:n,window:win};
+  }
+  return {goals:copyObj(globalGoals),milestone:m,nextMilestone:n,window:win};
+}
+
+
+function getCumAvailMap(day){return copyObj((day&&day.cumulativeAvail)||(day&&day.cumulativePT)||makeFamilyMap());}
+function getDailyAtOrBefore(analytics,targetDate){
+  let pick=null;
+  (analytics&&analytics.daily||[]).forEach(d=>{ if(d.date<=targetDate) pick=d; });
+  return pick;
+}
+function getCurrentPlanOrderStatus(plan,srcOrders){
+  if(!plan)return[];
+  const analytics=plan.analytics||getPlanAnalytics(plan,srcOrders);
+  const milestones=getOrderMilestones(srcOrders||[]);
+  const dispatchedSoFar=makeFamilyMap();
+  return milestones.map((r,idx)=>{
+    const day=getDailyAtOrBefore(analytics,r.date)||((analytics.daily||[]).length?(analytics.daily||[])[(analytics.daily||[]).length-1]:null)||{dispatched:makeFamilyMap(),netKits:makeFamilyMap(),cumulativeAvail:makeFamilyMap()};
+    const cumAvail=getCumAvailMap(day);
+    let totalReq=0,totalDisp=0;const shortages=[];const dispatched=makeFamilyMap();
+    FAMS_ORDER.forEach(f=>{
+      const req=Number(r.delta[f]||0);
+      const avail=Math.max(0,Math.floor(Number(cumAvail[f]||0))-Number(dispatchedSoFar[f]||0));
+      const disp=Math.min(req,avail);
+      dispatched[f]=disp;
+      if(req>0&&disp<req)shortages.push({fam:f,need:req,disp,miss:req-disp});
+      totalReq+=req; totalDisp+=disp;
+    });
+    FAMS_ORDER.forEach(f=>{dispatchedSoFar[f]=(dispatchedSoFar[f]||0)+Number(dispatched[f]||0);});
+    return {milestoneIndex:idx,date:r.date,client:r.client||'',delta:r.delta,cumulative:r.cumulative,dispatched,netKits:day.netKits||makeFamilyMap(),cumulativeAvail:cumAvail,ok:shortages.length===0,fill:totalReq?totalDisp/totalReq:1,shortages,totalReq,totalDisp};
+  });
+}
+function getProbablePlanOrderStatus(plan,srcOrders){
+  if(!plan)return[];
+  const analytics=plan.analytics||getPlanAnalytics(plan,srcOrders);
+  const milestones=getOrderMilestones(srcOrders||[]);
+  const current=getCurrentPlanOrderStatus(plan,srcOrders);
+  return milestones.map((r,idx)=>{
+    const row=current[idx]||{milestoneIndex:idx,date:r.date,client:r.client||'',delta:r.delta,cumulative:r.cumulative,dispatched:makeFamilyMap(),netKits:makeFamilyMap(),cumulativeAvail:makeFamilyMap(),ok:false,fill:0,shortages:[]};
+    let probable='';
+    (analytics.daily||[]).forEach(d=>{ if(!probable && FAMS_ORDER.every(f=>Number((getCumAvailMap(d)[f])||0)>=Number((r.cumulative&&r.cumulative[f])||0))) probable=d.date; });
+    if(!probable){
+      const last=(analytics.daily||[]).length?(analytics.daily||[])[(analytics.daily||[]).length-1]:null;
+      if(last && FAMS_ORDER.every(f=>Number((getCumAvailMap(last)[f])||0)>=Number((r.cumulative&&r.cumulative[f])||0))) probable=last.date;
+    }
+    const delay=probable?((analytics.daily||[]).filter(d=>d.date>r.date&&d.date<=probable&&(!calendarData.length||calendarData.find(c=>c.date===d.date)?.work!==false)).length):null;
+    row.probableDate=probable||''; row.delayDays=delay;
+    return row;
+  });
+}
+
+
+
+function getPlanAnalytics(plan,srcOrders){
+  if(!plan)return{dispatchMap:{},daily:[],finalStock:{},weekBreaks:new Set(),weeklyDispatch:[],weeklyStock:[]};
+  const dispatchMap=getOrderDispatchMap(srcOrders||orders||[]);
+  const stock=copyObj(plan.initialStock||{});
+  Object.values(KIT_STOCK_MAP).forEach(sk=>{stock[sk]=Number(stock[sk]||0);});
+  const fams=Object.keys(KIT_STOCK_MAP);
+  const daily=[];
+  const cumulativePT=makeFamilyMap();
+  const cumulativeDispatched=makeFamilyMap();
+  fams.forEach(f=>{cumulativePT[f]=Number(stock[KIT_STOCK_MAP[f]]||0);});
+  for(const day of (plan.schedule||[])){
+    const produced=makeFamilyMap();
+    const receipts={};
+    for(const e of (day.entries||[])){
+      const id=e.id||e.label;
+      if(e.type==='semi'){
+        const qty=Number(e.units||0);
+        applyAnalyticsSourceConsume(stock,id,qty);
+        const ad=ACTS[id];
+        if(ad&&ad.inv)stock[ad.inv]=(stock[ad.inv]||0)+qty;
+      }else if(e.type==='kit'){
+        const fam=e.family||String(id).replace('KIT_','');
+        const qty=Number(e.units||0);
+        produced[fam]=(produced[fam]||0)+qty;
+        cumulativePT[fam]=(cumulativePT[fam]||0)+qty;
+        if(useLabMapForKit(fam)){
+          const m=LAB_RES_MAP[fam];
+          let remNeed=qty;
+          const takeLab=Math.min(Number(stock[m.lab]||0),remNeed);
+          stock[m.lab]=Math.max(0,Number(stock[m.lab]||0)-takeLab);
+          remNeed-=takeLab;
+          if(remNeed>0){
+            stock[m.res]=Math.max(0,Number(stock[m.res]||0)-remNeed);
+            stock[m.pot]=Math.max(0,Number(stock[m.pot]||0)-remNeed);
+          }
+          Object.entries((FAMILIES[fam]&&FAMILIES[fam].bom)||{}).forEach(([inv,q])=>{
+            if(inv===m.res||inv===m.pot)return;
+            stock[inv]=Math.max(0,Number(stock[inv]||0)-qty*q);
+          });
+        }else{
+          Object.entries((FAMILIES[fam]&&FAMILIES[fam].bom)||{}).forEach(([inv,q])=>{
+            stock[inv]=Math.max(0,Number(stock[inv]||0)-qty*q);
+          });
+        }
+        const sk=KIT_STOCK_MAP[fam];
+        if(sk)stock[sk]=(stock[sk]||0)+qty;
+      }else if(e.type==='env_res'){
+        const fk=String(id).replace('ENV_','');
+        const inv=(FABACTS[fk]&&FABACTS[fk].inv)||null;
+        if(inv)receipts[inv]=(receipts[inv]||0)+Number(e.units||0);
+      }
+    }
+    Object.entries(receipts).forEach(([k,v])=>{stock[k]=(stock[k]||0)+Number(v||0);});
+    const requested=dispatchMap[day.date]||makeFamilyMap();
+    const dispatched=makeFamilyMap();
+    fams.forEach(f=>{
+      const req=Number(requested[f]||0);
+      if(req>0){
+        const sk=KIT_STOCK_MAP[f];
+        const ship=Math.min(Number(stock[sk]||0),req);
+        stock[sk]=Math.max(0,Number(stock[sk]||0)-ship);
+        dispatched[f]=ship;
+        cumulativeDispatched[f]=(cumulativeDispatched[f]||0)+ship;
+      }
+    });
+    const netKits=makeFamilyMap();
+    const cumulativeAvail=makeFamilyMap();
+    fams.forEach(f=>{netKits[f]=Number(stock[KIT_STOCK_MAP[f]]||0); cumulativeAvail[f]=Number(netKits[f]||0)+Number(cumulativeDispatched[f]||0);});
+    daily.push({date:day.date,produced,dispatched,netKits,cumulativeAvail,stock:copyObj(stock),cumulativePT:copyObj(cumulativePT)});
+  }
+  const weekBreaks=new Set();
+  const weeklyDispatch=[];const weeklyStock=[];
+  let acc=makeFamilyMap();
+  for(let i=0;i<daily.length;i++){
+    fams.forEach(f=>{acc[f]=(acc[f]||0)+Number(daily[i].dispatched[f]||0);});
+    const dow=new Date(daily[i].date+'T12:00:00').getDay();
+    const nextDow=i+1<daily.length?new Date(daily[i+1].date+'T12:00:00').getDay():-1;
+    if(dow===6||nextDow===1||i===daily.length-1){
+      weekBreaks.add(i);
+      weeklyDispatch.push(copyObj(acc));
+      weeklyStock.push(copyObj(daily[i].stock));
+      acc=makeFamilyMap();
+    }
+  }
+  return{dispatchMap,daily,finalStock:copyObj(stock),weekBreaks,weeklyDispatch,weeklyStock};
+}
+
+
+// ═══════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════
+function parseNum(id){const v=document.getElementById(id)?.value?.trim();if(!v)return 0;return Number(v.replace(',','.'))||0;}
+function fmt(n,d=0){return Number(n||0).toLocaleString('es-CL',{minimumFractionDigits:d,maximumFractionDigits:d});}
+function iso(d){return d.toISOString().slice(0,10)}
+function weekdayShort(d){return['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.getDay()]}
+function weekdayLong(d){return['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][d.getDay()]}
+function copyObj(o){return JSON.parse(JSON.stringify(o))}
+function stockLabel(key){
+  const meta=(STOCK_META||[]).find(m=>m.key===key);
+  return meta?.label || key;
+}
+function stockGroupKey(key){
+  if(/^kit_/.test(key)) return 'kits';
+  if(/^res_bf/.test(key)) return 'resinas_flexsol';
+  if(/^(dur1a|dur1b|dur2a|dur2b)$/.test(key)) return 'componentes_durafast';
+  if(/^(pot_.*_prep|balde.*_prep)$/.test(key)) return 'envases_y_empaque';
+  if(/^(env_solv|solv_.*_prep|imp_.*|cat.*)/.test(key)) return 'semi_elaborados';
+  return 'otros';
+}
+function stockGroupLabel(group){
+  return ({kits:'Kits terminados',resinas_flexsol:'Resinas Flexsol envasadas',componentes_durafast:'Componentes Durafast envasados',semi_elaborados:'Semi elaborados y acondicionados',envases_y_empaque:'Envases, potes y baldes preparados',otros:'Otros'})[group]||group;
+}
+function groupFinalStockMap(stock){
+  const out={kits:[],resinas_flexsol:[],componentes_durafast:[],semi_elaborados:[],envases_y_empaque:[],otros:[]};
+  Object.keys(stock||{}).sort().forEach(k=>{const v=Number(stock[k]||0); if(Math.abs(v)<1e-9) return; const g=stockGroupKey(k); (out[g]||(out[g]=[])).push({key:k,label:stockLabel(k),value:v});});
+  return out;
+}
+
+function applyAnalyticsSourceConsume(stock,actId,qty){
+  const srcInfo=ACT_SOURCE_CONSUME[actId];
+  if(!srcInfo||!qty)return;
+  const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume];
+  sources.forEach(s=>{stock[s]=Math.max(0,Number(stock[s]||0)-Number(qty||0));});
+}
+
+const ENGINE_VERSION='v106';
+function setStatus(msg){document.getElementById('status').textContent=msg;}
+// Save file with "Save As" dialog when browser supports it
+async function saveFileAs(blob,filename,description){
+  try{
+    if(window.showSaveFilePicker){
+      const ext=filename.split('.').pop();
+      const types={json:[{accept:{'application/json':['.json']}}],csv:[{accept:{'text/csv':['.csv']}}],xls:[{accept:{'application/vnd.ms-excel':['.xls']}}]};
+      const handle=await window.showSaveFilePicker({suggestedName:filename,types:types[ext]||[{accept:{'application/octet-stream':['.'+ext]}}]});
+      const w=await handle.createWritable();await w.write(blob);await w.close();
+      setStatus('✅ Archivo guardado: '+filename);return;
+    }
+  }catch(e){if(e.name==='AbortError')return;}
+  // Fallback: regular download
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;a.click();URL.revokeObjectURL(a.href);
+}
+function calendarSignature(){return JSON.stringify({start:document.getElementById('start').value,end:document.getElementById('end').value,holidays:(document.getElementById('holidays').value||'').split(',').map(x=>x.trim()).filter(Boolean).sort()});}
+function updateEngineFlags(extra=''){
+  const forced=getForcedPriorities();
+  const forcedActive=Object.values(forced).some(v=>Number(v||0)>0);
+  const forcedKit=getForcedKitPriorities();
+  const forcedKitActive=Object.values(forcedKit).some(v=>Number(v||0)>0);
+  const holidayList=(document.getElementById('holidays').value||'').split(',').map(x=>x.trim()).filter(Boolean);
+  const holidayApplied=(calendarData||[]).filter(d=>holidayList.includes(d.date) && !d.work).length;
+  const startMap=getFabStartDates();
+  const startCount=Object.values(startMap).filter(Boolean).length;
+  const stockMsg=stockLoadSummary.loaded?`TXT (${stockLoadSummary.rows} filas; directos ${stockLoadSummary.direct}; compuestos ${stockLoadSummary.compound})`:(stockLoadSummary.source||'manual / no verificado');
+  const el=document.getElementById('engineFlags');
+  if(el){
+    const frozenMsg=frozenBaseline&&frozenBaseline.frontierDate?` | Prefijo congelado: ${(document.getElementById('useFrozenPrefix')?.checked)?'activo':'guardado'} hasta ${frozenBaseline.frontierDate}`:'';
+    el.textContent=`Prioridad fabricación: ${forcedActive?'sí':'no'} | Prioridad kit: ${forcedKitActive?'sí':'no'} | Arranques forzados: ${startCount} | Feriados aplicados: ${holidayApplied}/${holidayList.length||0} | Stock inicial cargado: ${stockMsg}${frozenMsg}${extra?(' | '+extra):''}`;
+  }
+}
+function getGoals(){return{BF03:parseNum('g_BF03'),BF01:parseNum('g_BF01'),BF02:parseNum('g_BF02'),WUR:parseNum('g_WUR'),MX1_5:parseNum('g_MX1_5'),MX1_10:parseNum('g_MX1_10'),MX2_5:parseNum('g_MX2_5'),MX2_10:parseNum('g_MX2_10')}}
+function getForcedPriorities(){return{BF01:parseNum('p_BF01'),BF02:parseNum('p_BF02'),BF03:parseNum('p_BF03'),WUR_BF01:parseNum('p_WUR'),MX1A:parseNum('p_MX1A'),MX1B:parseNum('p_MX1B'),MX2A:parseNum('p_MX2A'),MX2B:parseNum('p_MX2B')}}
+function getForcedKitPriorities(){return{BF01:parseNum('pk_BF01'),BF02:parseNum('pk_BF02'),BF03:parseNum('pk_BF03'),WUR:parseNum('pk_WUR'),MX1_5:parseNum('pk_MX1_5'),MX1_10:parseNum('pk_MX1_10'),MX2_5:parseNum('pk_MX2_5'),MX2_10:parseNum('pk_MX2_10')}}
+function getFabStartDates(){return{BF01:(document.getElementById('fs_BF01')?.value||'').trim(),BF02:(document.getElementById('fs_BF02')?.value||'').trim(),BF03:(document.getElementById('fs_BF03')?.value||'').trim(),WUR_BF01:(document.getElementById('fs_WUR_BF01')?.value||'').trim(),MX1A:(document.getElementById('fs_MX1A')?.value||'').trim(),MX1B:(document.getElementById('fs_MX1B')?.value||'').trim(),MX2A:(document.getElementById('fs_MX2A')?.value||'').trim(),MX2B:(document.getElementById('fs_MX2B')?.value||'').trim()}}
+function fabEnabledOnDate(fab,date,startMap){const d=((startMap&&startMap[fab])||'').trim();return !d||date>=d}
+function fabBase(fab){return /^MX1/.test(fab)?'MX1':(/^MX2/.test(fab)?'MX2':'');}
+function fabPart(fab){return /A$/.test(fab)?'A':(/B$/.test(fab)?'B':'');}
+function initCampaignState(seedStock=null){const seed=(a,b,out)=>({openA:Math.max(0,Math.floor((Number((seedStock&&seedStock[a])||0)-Number((seedStock&&seedStock[b])||0))/out)),lastPart:'',started:false});return {MX1:seed('dur1a','dur1b',514),MX2:seed('dur2a','dur2b',514)};}
+function canStartFabBySequence(fab,campaignState){const base=fabBase(fab); if(!base) return true; const part=fabPart(fab); const st=(campaignState&&campaignState[base])||{openA:0,lastPart:'',started:false}; if(part==='A') return true; return Number(st.openA||0)>0;}
+function updateCampaignStateAfterFab(fab,campaignState){const base=fabBase(fab); if(!base||!campaignState) return; const part=fabPart(fab); const st=campaignState[base]||(campaignState[base]={openA:0,lastPart:'',started:false}); if(part==='A'){st.openA=Number(st.openA||0)+1; st.lastPart='A'; st.started=true;} else if(part==='B'){st.openA=Math.max(0,Number(st.openA||0)-1); st.lastPart='B'; st.started=true;}}
+function closeCampaignOnSwitch(prevFab,nextFab,campaignState){const prevBase=fabBase(prevFab||''); const nextBase=fabBase(nextFab||''); if(!prevBase||!campaignState) return; const st=campaignState[prevBase]||(campaignState[prevBase]={openA:0,lastPart:'',started:false}); if(prevBase!==nextBase && Number(st.openA||0)<=0){st.lastPart='';}}
+
+function getStocks(){const s={};STOCK_KEYS.forEach(k=>s[k]=parseNum('s_'+k));return s}
+const LAB_RES_MAP={BF01:{res:'res_bf01',lab:'res_bf01_labeled',pot:'pot_bf01_prep'},BF02:{res:'res_bf02',lab:'res_bf02_labeled',pot:'pot_bf02_prep'},BF03:{res:'res_bf03',lab:'res_bf03_labeled',pot:'pot_bf03_prep'},WUR:{res:'res_wur',lab:'',pot:'pot_wur_prep'}};
+const SHARED_TERMINAL_CONSUMERS={
+  solv_flex_prep:['BF01','BF02','BF03'],
+  imp_goma_prep:['BF01','BF02','BF03'],
+  cat0102_prep:['BF01','BF02'],
+  impfa_prep:['BF02','BF03'],
+  impfb_prep:['BF02','BF03'],
+  solv_dur_prep:['MX1_5','MX1_10','MX2_5','MX2_10']
+};
+function isSharedTerminalKey(inv){return !!SHARED_TERMINAL_CONSUMERS[inv];}
+const BF03_PREP_BUFFER_UNITS=1600;
+function requiredTerminalUnitsForFamily(fam,inv,goals,kits,stock){
+  if(fam==='BF03'&&(inv==='impfa_prep'||inv==='impfb_prep')) return Math.min(bf03CondoneadoNeed(goals,kits,stock), BF03_PREP_BUFFER_UNITS);
+  return Math.max(0, remainingGoal(fam,goals,kits)*(Number((FAMILIES[fam]&&FAMILIES[fam].bom&&FAMILIES[fam].bom[inv])||0)));
+}
+function sharedTerminalNeed(inv,goals,kits,stock){
+  const fams=SHARED_TERMINAL_CONSUMERS[inv]||[];
+  return fams.reduce((acc,f)=>acc+requiredTerminalUnitsForFamily(f,inv,goals,kits,stock),0);
+}
+const SHARED_SEMI_ACTS=new Set(['ETI_SOLV_FLEX','ETI_IMP_GOMA','ETI_CAT_0102','ETI_IMP_FA','ETI_IMP_FB','ETI_SOLV_DUR','ENV_IMP_FA','ENV_IMP_FB']);
+function mergeSemiCandidate(list,cand){
+  const i=list.findIndex(x=>x.act===cand.act);
+  if(i<0){list.push(cand);return;}
+  const prev=list[i];
+  if((cand.score||0)>(prev.score||0)) list[i]=cand;
+  else if((cand.out||0)>(prev.out||0)) prev.out=cand.out;
+}
+const TRANSFORMED_KIT_FAMS=new Set(['BF01','BF02','BF03','WUR']);
+function useLabMapForKit(fam){return !!(LAB_RES_MAP[fam]&&!TRANSFORMED_KIT_FAMS.has(fam));}
+function resinPoolAvailable(fam,stock){const m=LAB_RES_MAP[fam];if(!m)return 0;return (stock[m.res]||0)+(stock[m.lab]||0)}
+function transformedResinAvailable(fam,stock){
+  if(fam==='BF03') return Number((stock&&stock.res_bf03_revisada)||0);
+  if(fam==='BF01') return Number((stock&&stock.res_condoneada_bf01)||0);
+  if(fam==='BF02') return Number((stock&&stock.res_condoneada_bf02)||0);
+  if(fam==='WUR') return Number((stock&&stock.res_condoneada_wur)||0);
+  return 0;
+}
+function usefulResinAvailable(fam,stock){
+  return Number(resinPoolAvailable(fam,stock)||0)+Number(transformedResinAvailable(fam,stock)||0);
+}
+function bf03CondoneadoNeed(goals,kits,stock){
+  return Math.max(0, remainingGoal('BF03',goals,kits) - Number((stock&&stock.imp_condoneado_ab)||0));
+}
+function resinBundleAvailable(fam,stock){const m=LAB_RES_MAP[fam];if(!m)return 0;return Math.min(usefulResinAvailable(fam,stock), (stock[m.pot]||0))}
+function getStockGroupValue(stock,sk){
+  if(!sk)return '';
+  if(sk.startsWith('__fab__'))return 0;// Fabrication = batch count, no initial stock (always starts at 0)
+  if(sk.startsWith('__kit__')){const fam=sk.replace('__kit__','');return Number(stock[KIT_STOCK_MAP[fam]]||0)}
+  if(sk.startsWith('__resfamily__')){const fam=sk.replace('__resfamily__','');return Number(resinPoolAvailable(fam,stock))}
+  return Number(stock[sk]||0)
+}
+function possibleKits(fam,stock){
+  const bom=FAMILIES[fam].bom;let m=Infinity;
+  Object.entries(bom).forEach(([inv,q])=>{
+    if(useLabMapForKit(fam)&&(inv===LAB_RES_MAP[fam].res||inv===LAB_RES_MAP[fam].pot))return;
+    m=Math.min(m,(stock[inv]||0)/q);
+  });
+  if(useLabMapForKit(fam)&&LAB_RES_MAP[fam]) m=Math.min(m,resinBundleAvailable(fam,stock));
+  return isFinite(m)?Math.max(0,m):0;
+}
+function respectsFabStartForFamily(fam,date){if(fam==='WUR')return fabEnabledOnDate('WUR_BF01',date,getFabStartDates());return true}
+function initialKitQty(fam){const k=KIT_STOCK_MAP[fam];return Number(scenarioInitialStock[k]||0)}
+function planningInitialKitQty(fam){const frozenActive=!!(frozenBaseline&&document.getElementById('useFrozenPrefix')?.checked&&frozenBaseline.frontierDate);return frozenActive?0:initialKitQty(fam)}
+function achievedQtyForPlanning(fam,kits){return Number(planningInitialKitQty(fam)||0)+Number((kits&&kits[fam])||0)}
+function remainingGoal(fam,goals,kits){return Math.max(0,Number(goals[fam]||0)-achievedQtyForPlanning(fam,kits))}
+function stagesFor(goals,forced,kitForcedArg){
+  const base=['BF03','BF01','BF02','WUR','MX1_5','MX1_10','MX2_5','MX2_10'].filter(f=>goals[f]>0);
+  const kitForced=kitForcedArg||getForcedKitPriorities();
+  const fabPriority={BF01:forced.BF01||0,BF02:forced.BF02||0,BF03:forced.BF03||0,WUR:forced.WUR_BF01||0,MX1_5:Math.max(forced.MX1A||0,forced.MX1B||0),MX1_10:(forced.MX1B||0),MX2_5:Math.max(forced.MX2A||0,forced.MX2B||0),MX2_10:(forced.MX2B||0)};
+  const kitPriority={BF01:kitForced.BF01||0,BF02:kitForced.BF02||0,BF03:kitForced.BF03||0,WUR:kitForced.WUR||0,MX1_5:kitForced.MX1_5||0,MX1_10:kitForced.MX1_10||0,MX2_5:kitForced.MX2_5||0,MX2_10:kitForced.MX2_10||0};
+  const anyForced=[...Object.values(forced||{}),...Object.values(kitPriority||{})].some(v=>Number(v||0)>0);
+  if(!anyForced)return base;
+  const pVal=(fam)=>{const vals=[Number(fabPriority[fam]||0),Number(kitPriority[fam]||0)].filter(v=>v>0);return vals.length?Math.min(...vals):0;};
+  return base.slice().sort((a,b)=>{
+    const pa=pVal(a),pb=pVal(b);const aHas=pa>0,bHas=pb>0;
+    if(aHas&&!bHas)return -1;
+    if(!aHas&&bHas)return 1;
+    if(aHas&&bHas&&pa!==pb)return pa-pb;
+    const ka=Number(kitPriority[a]||0),kb=Number(kitPriority[b]||0);
+    if(ka>0&&kb>0&&ka!==kb)return ka-kb;
+    return base.indexOf(a)-base.indexOf(b);
+  });
+}
+function hasForcedPriority(forced){return Object.values(forced).some(v=>Number(v||0)>0)}
+function invDeficitForFamily(fam,stock,goals,kits,inv){
+  if(isSharedTerminalKey(inv) && (SHARED_TERMINAL_CONSUMERS[inv]||[]).includes(fam)){
+    return Math.max(0, sharedTerminalNeed(inv,goals,kits,stock) - Number((stock&&stock[inv])||0));
+  }
+  // v100.5: si inv es un envasado intermedio compartido, su déficit se deriva
+  // desde el déficit pendiente de los etiquetados que lo consumen.
+  if(typeof isBulkSemiKey==='function' && isBulkSemiKey(inv)){
+    const consumers=BULK_TO_LABELS_MAP[inv]||[];
+    let bulkNeed=0;
+    consumers.forEach(c=>{
+      if(!c.applies(fam))return;
+      const required=requiredTerminalUnitsForFamily(fam,c.out,goals,kits,stock);
+      const labelDeficit=Math.max(0, required - (stock[c.out]||0));
+      bulkNeed += labelDeficit;
+    });
+    return Math.max(0, bulkNeed - (stock[inv]||0));
+  }
+  // Resina y pote se evalúan en forma independiente.
+  if(LAB_RES_MAP[fam]){
+    const m=LAB_RES_MAP[fam];
+    if(inv===m.res) return Math.max(0, remainingGoal(fam,goals,kits) - usefulResinAvailable(fam,stock));
+    if(inv===m.pot){
+      const transformed=Number(transformedResinAvailable(fam,stock)||0);
+      const futureNeed=Math.max(0, remainingGoal(fam,goals,kits) - transformed);
+      return Math.max(0, futureNeed - (stock[m.pot]||0));
+    }
+  }
+  // v100.5: BF03 requiere imprimantes fierro A/B etiquetados antes de condonear.
+  // Si ya existe imp_condoneado_ab, ese saldo reduce la necesidad adicional de etiquetas A/B.
+  if(fam==='BF03'&&(inv==='impfa_prep'||inv==='impfb_prep')){
+    return Math.max(0, bf03CondoneadoNeed(goals,kits,stock) - (stock[inv]||0));
+  }
+  return Math.max(0,remainingGoal(fam,goals,kits)*(FAMILIES[fam].bom[inv]||0)-(stock[inv]||0));
+}
+function fabricationNeedUnits(fab,stock,goals,kits){
+  // v96 FIX: fabrication must consider useful resin already transformed for kit use
+  // BF03: raw/resina pool + revisada | BF01/BF02/WUR: raw/resina pool + condoneada
+  if(fab==='BF03') return Math.max(0, remainingGoal('BF03',goals,kits) - usefulResinAvailable('BF03',stock));
+  if(fab==='BF01') return Math.max(0, remainingGoal('BF01',goals,kits) - usefulResinAvailable('BF01',stock));
+  if(fab==='BF02') return Math.max(0, remainingGoal('BF02',goals,kits) - usefulResinAvailable('BF02',stock));
+  if(fab==='WUR_BF01') return Math.max(0, remainingGoal('WUR',goals,kits) - usefulResinAvailable('WUR',stock));
+  if(fab==='MX1A') return Math.max(0, remainingGoal('MX1_5',goals,kits) + 2*remainingGoal('MX1_10',goals,kits) - (stock.dur1a||0));
+  if(fab==='MX1B') return Math.max(0, remainingGoal('MX1_5',goals,kits) + 2*remainingGoal('MX1_10',goals,kits) - (stock.dur1b||0));
+  if(fab==='MX2A') return Math.max(0, remainingGoal('MX2_5',goals,kits) + 2*remainingGoal('MX2_10',goals,kits) - (stock.dur2a||0));
+  if(fab==='MX2B') return Math.max(0, remainingGoal('MX2_5',goals,kits) + 2*remainingGoal('MX2_10',goals,kits) - (stock.dur2b||0));
+  return 0;
+}
+function fabricationNeedBatches(fab,stock,goals,kits){
+  const need=fabricationNeedUnits(fab,stock,goals,kits);
+  const batch=(FABACTS[fab]&&FABACTS[fab].output)||1;
+  return Math.ceil(need/batch);
+}
+function addOrMergeEntry(entries,e){
+  if(e.duration_min||e.partialOps||e.noMerge||e.isPostClean){entries.push({...e});return;}
+  const f=entries.find(x=>x.block===e.block&&x.type===e.type&&x.id===e.id);
+  if(f){
+    f.units+=e.units;
+    f.ops=Number(f.ops||0)+Number(e.ops||0);
+  } else entries.push({...e});
+}
+function dayLabel(dateStr){const d=new Date(dateStr+'T00:00:00');return weekdayLong(d)+' '+dateStr.slice(8,10)+'-'+dateStr.slice(5,7)}
+function getOrdersArray(){return Array.isArray(orders)?orders:[]}
+function getFamilyUrgency(dayDate,fam,kits){if(!dayDate)return 0;const rows=getOrderMilestones(getOrdersArray());const available=achievedQtyForPlanning(fam,kits);let score=0;rows.forEach(r=>{const req=Number((r.cumulative&&r.cumulative[fam])||0);const deficit=Math.max(0,req-available);if(deficit<=0)return;const diff=Math.round((new Date(r.date+'T00:00:00')-new Date(dayDate+'T00:00:00'))/86400000);const w=diff<=0?2400:diff===1?1800:diff<=2?1200:diff<=4?650:diff<=7?280:90;score+=deficit*w;});return score}
+function getFamilyNeedIndex(fam,goals,kits,stock){const rem=remainingGoal(fam,goals,kits);if(rem<=0)return 0;let deficit=0;const implied=[];if(fam==='BF03') implied.push('impfa_prep','impfb_prep');if(['BF01','BF02','WUR'].includes(fam)&&LAB_RES_MAP[fam]) implied.push(LAB_RES_MAP[fam].pot);const keys=[...new Set(Object.keys((FAMILIES[fam]&&FAMILIES[fam].bom)||{}).concat(implied))];keys.forEach(inv=>{deficit+=Math.max(0,invDeficitForFamily(fam,stock,goals,kits,inv));});return deficit}
+
+function getDayFamilyRanking(dayDate,goals,kits,stock,baseOrder,forced){
+  const fams=Object.keys(goals).filter(f=>remainingGoal(f,goals,kits)>0.001);
+  const kitForced=getForcedKitPriorities();
+  const orderKitPriority=getMilestoneOrderKitPriority(dayDate,kits);
+  const win=getMilestoneWindow(dayDate,kits), milestone=win.current||{date:null,daysTo:999,deficits:makeFamilyMap()}, next=win.next||{date:null,daysTo:999,deficits:makeFamilyMap()};
+  const focusCtx=getActiveOrderPriorityContext(dayDate,kits);
+  const focusSet=new Set((focusCtx&&focusCtx.focusFamilies)||[]);
+  const orderSet=new Set((focusCtx&&focusCtx.orderFamilies)||[]);
+  const strictOrderFocus=!!(focusCtx&&focusCtx.hasFocus&&focusCtx.prioritySequence&&focusCtx.prioritySequence.length);
+  return fams.map(f=>{
+    const rem=remainingGoal(f,goals,kits);
+    const urg=getFamilyUrgency(dayDate,f,kits);
+    const poss=Math.floor(possibleKits(f,stock));
+    const need=getFamilyNeedIndex(f,goals,kits,stock);
+    const oi=Math.max(0,(baseOrder||[]).indexOf(f));
+    const ordBias=(baseOrder||[]).includes(f)?Math.max(0,(baseOrder.length-oi))*5:0;
+    const forceBias=Number((forced&&((forced[f]||0)))||0)>0?(60-Math.min(50,Number(forced[f]||0)*4)):0;
+    const kitForceBias=Number((kitForced&&kitForced[f])||0)>0?(90-Math.min(80,Number(kitForced[f]||0)*5)):0;
+    const orderKitBias=Number((orderKitPriority&&orderKitPriority[f])||0)>0?((milestone.daysTo<=0?700:milestone.daysTo<=2?600:420)-Math.min(260,(Number(orderKitPriority[f]||0)-1)*80)):0;
+    const sat=(new Date(dayDate+'T00:00:00').getDay()===6)?1:0;
+    const dueDef=Number((milestone.deficits&&milestone.deficits[f])||0);
+    const nextDef=Number((next.deficits&&next.deficits[f])||0);
+    const dueW=milestone.date?(milestone.daysTo<=0?950:milestone.daysTo===1?760:milestone.daysTo<=2?520:milestone.daysTo<=4?260:90):0;
+    const nextW=next.date?(strictOrderFocus?0:(next.daysTo<=2?220:next.daysTo<=5?160:80)):0;
+    const milestoneScore=(dueDef*dueW)+(nextDef*nextW);
+    const thisOrderNeed=Number((focusCtx&&focusCtx.remainingThisOrder&&focusCtx.remainingThisOrder[f])||0);
+    const focusBias=(strictOrderFocus&&focusSet.has(f))?(120000+Math.min(20000,thisOrderNeed*180)):0;
+    const sameOrderPenalty=(strictOrderFocus&&orderSet.has(f)&&!focusSet.has(f))?-(90000+Math.min(18000,Math.max(1,thisOrderNeed)*120)):0;
+    const offOrderPenalty=(strictOrderFocus&&!orderSet.has(f))?-140000:0;
+    const score=milestoneScore+urg*0.08+Math.min(rem,poss)*15+rem*3+Math.min(need,rem*7)*1.9+ordBias+forceBias+kitForceBias+orderKitBias+(sat?Math.min(rem,poss)*8:0)+focusBias+sameOrderPenalty+offOrderPenalty;
+    return{fam:f,score,rem,urg,poss,need,dueDef,nextDef,milestoneDate:milestone.date,nextDate:next.date};
+  }).sort((a,b)=>b.score-a.score)
+}
+function getGlobalKitCandidates(rank,stock,goals,kits,ops,hrs,groupUsage){
+  const out=[];(rank||[]).forEach((it,idx)=>{const fam=it.fam||it;if(!FAMILIES[fam])return;if(ops<FAMILIES[fam].kitOps)return;if(groupUsage&&groupUsage.KIT>=((CURRENT_GROUP_LIMITS&&CURRENT_GROUP_LIMITS.KIT)||(GROUP_LIMITS.KIT||2)))return;const rem=remainingGoal(fam,goals,kits);if(rem<=0)return;if(it&&it.date&&!respectsFabStartForFamily(fam,it.date))return;const poss=possibleKits(fam,stock);let qty=normalizeKitOut(fam,Math.min(rem,FAMILIES[fam].kitCap*hrs/8,poss),rem,poss);if(qty<=0)return;const dueBoost=1+Math.min(3,(Number(it.dueDef||0)/Math.max(1,qty))*0.6)+Math.min(1.6,(Number(it.nextDef||0)/Math.max(1,qty))*0.25);const weight=(Math.max(1,4-idx)+(it.urg?Math.min(4,it.urg/250):0))*dueBoost;out.push({score:qty*weight,fam,out:qty});});return out.sort((a,b)=>b.score-a.score)}
+function globalSemiCandidates(order,active,stock,goals,kits,ops,hrs,assignedPerAct,dayDate='',idleBias=0){
+  const semis=[];const rank=getDayFamilyRanking(dayDate,goals,kits,stock,order,{});const focusCtx=getActiveOrderPriorityContext(dayDate,kits);const focusSet=new Set((focusCtx&&focusCtx.focusFamilies)||[]);const orderSet=new Set((focusCtx&&focusCtx.orderFamilies)||[]);const strictOrderFocus=!!(focusCtx&&focusCtx.hasFocus&&focusCtx.prioritySequence&&focusCtx.prioritySequence.length);const famList=[...new Set(rank.map(x=>x.fam).concat(order||[]))];
+  for(const fam of famList){
+    if(!FAMILIES[fam])continue;
+    if(strictOrderFocus){
+      if(focusSet.size){ if(!focusSet.has(fam)) continue; }
+      else if(orderSet.size && !orderSet.has(fam)) continue;
+    }
+    const isActive=active.includes(fam);
+    const rankMeta=rank.find(x=>x.fam===fam)||{urg:0,rem:remainingGoal(fam,goals,kits),dueDef:0,nextDef:0};
+    const urgBoost=1+Math.min(2.8,rankMeta.urg/520);
+    const dueBoost=1+Math.min(3.5,Number(rankMeta.dueDef||0)/120)+Math.min(2,Number(rankMeta.nextDef||0)/180);
+    const baseWeight=(isActive?2.0:1.2)*urgBoost*dueBoost;
+    let familyMultiplier=1;
+    if(strictOrderFocus){
+      familyMultiplier=focusSet.has(fam)?20.0:1.0;
+    }
+    for(const act of (FAMILY_PREP_ACTS[fam]||[])){
+      const ad=ACTS[act];if(ops<ad.ops)continue;const used=assignedPerAct[act]||0;const limit=getDynamicParallelLimit(act,ops,hrs);if(used>=limit)continue;const inv=ad.inv;let deficit=invDeficitForFamily(fam,stock,goals,kits,inv);if(fam.startsWith('MX1')&&(inv==='env_solv'||inv==='solv_dur_prep'))deficit=invDeficitForFamily('MX1_5',stock,goals,kits,inv)+invDeficitForFamily('MX1_10',stock,goals,kits,inv);if(fam.startsWith('MX2')&&(inv==='env_solv'||inv==='solv_dur_prep'))deficit=invDeficitForFamily('MX2_5',stock,goals,kits,inv)+invDeficitForFamily('MX2_10',stock,goals,kits,inv);
+      // v100.5 FIX: bulks compartidos (env_solv, imp_goma_filled, cat0102_filled, impfa_filled, impfb_filled) deben sumar déficit de TODAS las familias consumidoras, no solo la actual.
+      // Incluye BF03 como consumidor de impfa/impfb etiquetados porque ahora CONDONEADO_IMP exige A y B previamente etiquetados.
+      if(typeof isBulkSemiKey==='function' && isBulkSemiKey(inv)){
+        let total=0;
+        Object.keys(FAMILIES).forEach(f2=>{ total += invDeficitForFamily(f2,stock,goals,kits,inv); });
+        deficit=total;
+      }
+      const prereqs=ACT_PREREQS[act];
+      if(prereqs&&prereqs.some(p=>(stock[p]||0)<=0)){continue;}
+      if(deficit<=0&&idleBias>0&&(rankMeta.rem>0||Number(rankMeta.dueDef||0)>0)){let curr=Number(stock[inv]||0);let target=Math.min(rankMeta.rem*Math.max(1,(FAMILIES[fam].bom[inv]||1)),Math.max(ad.cap8*(new Date(dayDate+'T00:00:00').getDay()===6?1.0:0.65)*idleBias,ad.cap8*hrs/8*1.15));deficit=Math.max(0,target-curr);}
+      if(deficit<=0)continue;
+      let unitOut=ad.cap8*hrs/8;
+      if(ACT_PREREQS[act]){const maxFromSource=getCondoneadoLimit(act,stock);unitOut=Math.min(unitOut,maxFromSource);if(unitOut<=0)continue;}
+      let score=(baseWeight*Math.min(unitOut,deficit))/ad.ops;score/=(1+used*1.05);if(idleBias>0)score*=1+idleBias*1.5;if(new Date(dayDate+'T00:00:00').getDay()===6)score*=1.2;score*=familyMultiplier;mergeSemiCandidate(semis,{score,act,out:unitOut,fam});
+    }
+  }
+  return semis.sort((a,b)=>b.score-a.score)
+}
+
+const KIT_MIN_LOT={BF03:25,BF01:25,BF02:25,WUR:25,MX1_5:10,MX1_10:10,MX2_5:10,MX2_10:10};
+function normalizeKitOut(fam,out,rem,possible){const maxInt=Math.floor(Math.min(out,rem,possible));if(maxInt<=0)return 0;const minLot=KIT_MIN_LOT[fam]||1;if(maxInt<minLot){const totalPossible=Math.floor(Math.min(rem,possible));if(totalPossible>=minLot)return 0;}return maxInt}
+
+const GROUP_LIMITS={POTE_LABEL:12,BOTTLE_LABEL:12,KIT:6};
+let CURRENT_GROUP_LIMITS={...GROUP_LIMITS};
+function getDynamicGroupLimits(ops){
+  const safe=Math.max(0,Number(ops||0));
+  return {
+    POTE_LABEL: Math.min(18, Math.max(6, Math.floor(safe*0.95))),
+    BOTTLE_LABEL: Math.min(18, Math.max(6, Math.floor(safe*0.95))),
+    KIT: Math.min(8, Math.max(2, Math.floor(safe/2.5)))
+  };
+}
+function getDynamicParallelLimit(act,ops,hrs){
+  const base=MAX_PARALLEL[act]||1;
+  const ad=ACTS[act];
+  if(!ad)return base;
+  const safe=Math.max(0,Number(ops||0));
+  let bonus=0;
+  if(ad.ops<=1) bonus=Math.floor((safe-10)/2);
+  else if(ad.ops===2) bonus=Math.floor((safe-10)/3);
+  else bonus=Math.floor((safe-10)/4);
+  let lim=base+Math.max(0,bonus);
+  if(/^(ETI_|ENV_)/.test(act) || /CONDONEADO|REVISION|CORTE|LIMPIEZA/.test(act)) lim=Math.max(base,lim);
+  lim=Math.min(lim, Math.max(1, Math.floor(safe/Math.max(1,ad.ops))));
+  return Math.max(1, lim);
+}
+// v23 FIX: Dynamic kit limit - 2 lines allowed when spare operators and no other useful tasks
+function dynamicKitLimit(ops,fam,order,active,stock,goals,kits,hrs,assignedPerAct,dayDate=''){
+  const safe=Math.max(0,Number(ops||0));
+  if(safe<6)return 1;
+  const focusCtx=getActiveOrderPriorityContext(dayDate,kits);
+  const focusSet=new Set((focusCtx&&focusCtx.focusFamilies)||[]);
+  const strictOrderFocus=!!(focusCtx&&focusCtx.hasFocus&&focusCtx.prioritySequence&&focusCtx.prioritySequence.length);
+  let lim=Math.min(6, Math.max(1, Math.floor(safe/2.5)));
+  if(strictOrderFocus && focusSet.has(fam)) return Math.max(2, lim);
+  const semis=globalSemiCandidates(order,active,stock,goals,kits,Math.max(0,safe-3),hrs,assignedPerAct,dayDate,1.25);
+  const usefulSemis=semis.filter(s=>s.score>0).length;
+  if(usefulSemis===0) return Math.max(2, lim);
+  if((active||[]).includes(fam) || (order||[]).slice(0,3).includes(fam)) return Math.max(2, lim);
+  return Math.min(lim, 3);
+}
+const POTE_LABEL_ACTS=new Set(['ETI_POTE_BF03','ETI_POTE_BF01','ETI_POTE_BF02']);
+const BOTTLE_LABEL_ACTS=new Set(['ETI_SOLV_FLEX','ETI_SOLV_DUR','ETI_IMP_GOMA','ETI_CAT_0102','ETI_IMP_FA','ETI_IMP_FB']);
+function groupForActivity(act,type){
+  if(type==='kit') return 'KIT';
+  if(POTE_LABEL_ACTS.has(act)) return 'POTE_LABEL';
+  if(BOTTLE_LABEL_ACTS.has(act)) return 'BOTTLE_LABEL';
+  return '';
+}
+function canUseGroup(groupUsage,act,type,ops){
+  const grp=groupForActivity(act,type);
+  if(!grp) return true;
+  const inc=grp==='KIT'?1:ops;
+  return (groupUsage[grp]||0)+inc<=(((CURRENT_GROUP_LIMITS&&CURRENT_GROUP_LIMITS[grp])||(GROUP_LIMITS[grp]||999)));
+}
+function consumeGroup(groupUsage,act,type,ops){
+  const grp=groupForActivity(act,type);
+  if(!grp) return;
+  const inc=grp==='KIT'?1:ops;
+  groupUsage[grp]=(groupUsage[grp]||0)+inc;
+}
+
+function achievedDisplay(displayKits,goals,fam){return Math.min(displayKits[fam]||0,goals[fam]||0)}
+function achievedTotal(displayKits,goals){return Object.keys(goals).reduce((a,f)=>a+Math.min(displayKits[f]||0,goals[f]||0),0)}
+
+// ═══════════════════════════════════════════════════
+// CALENDAR
+// ═══════════════════════════════════════════════════
+function generateDays(s,e,h){
+  const hs=new Set(h.split(',').map(x=>x.trim()).filter(Boolean));
+  const st=new Date(s+'T00:00:00');const en=new Date(e+'T00:00:00');const out=[];
+  for(let d=new Date(st);d<=en;d.setDate(d.getDate()+1)){
+    const wd=d.getDay();const k=iso(d);
+    const isSunday=wd===0, isSaturday=wd===6, isHoliday=hs.has(k);
+    const w=!(isHoliday||isSunday);
+    out.push({date:k,dow:weekdayShort(d),work:w,b1:w?3:0,b2:w?1.5:0,b3:(w&&!isSaturday)?3.5:0,note:isHoliday?'Feriado':(isSunday?'Domingo':(isSaturday?'Sábado 07:30-12:00':''))});
+  }
+  return out
+}
+function regenerateCalendar(){calendarData=generateDays(document.getElementById('start').value,document.getElementById('end').value,document.getElementById('holidays').value);renderCalendar();setStatus('Calendario regenerado.')}
+function renderCalendar(){const t=document.getElementById('calTable');const baseOps=Number(document.getElementById('ops')?.value||0);const profile=parseOpsProfile(document.getElementById('opsProfile')?.value||'');let h='<thead><tr><th>Fecha</th><th>Día</th><th>Trabaja</th><th>B1</th><th>B2</th><th>B3</th><th>Ops</th><th>Nota</th></tr></thead><tbody>';calendarData.forEach((r,i)=>{const opsDay=getOpsForDate(r.date,baseOps,profile);h+=`<tr><td>${r.date}</td><td>${r.dow}</td><td><input type="checkbox" ${r.work?'checked':''} onchange="calendarData[${i}].work=this.checked;if(!this.checked){calendarData[${i}].b1=0;calendarData[${i}].b2=0;calendarData[${i}].b3=0;}renderCalendar()"></td><td><input type="number" step="0.1" value="${r.b1}" style="width:60px" oninput="calendarData[${i}].b1=Number(this.value)||0"></td><td><input type="number" step="0.1" value="${r.b2}" style="width:60px" oninput="calendarData[${i}].b2=Number(this.value)||0"></td><td><input type="number" step="0.1" value="${r.b3}" style="width:60px" oninput="calendarData[${i}].b3=Number(this.value)||0"></td><td><span class="small" style="color:#dbe8ff">${fmt(opsDay,0)}</span></td><td><input type="text" value="${r.note||''}" style="width:120px" oninput="calendarData[${i}].note=this.value"></td></tr>`});t.innerHTML=h+'</tbody>';renderOpsProfileSummary();}
+function resetDefaults(){document.getElementById('mode').value='mix';document.getElementById('ops').value='10';document.getElementById('start').value='2026-03-30';document.getElementById('end').value='2026-04-30';document.getElementById('holidays').value='2026-04-03'; const opsProfileEl=document.getElementById('opsProfile'); if(opsProfileEl)opsProfileEl.value='';['g_BF01','g_BF03','g_BF02','g_WUR','g_MX1_5','g_MX1_10','g_MX2_5','g_MX2_10'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=id==='g_BF01'?'3000':id==='g_BF03'?'2000':id==='g_MX1_5'?'900':id==='g_MX1_10'?'835':'0';});['p_BF01','p_BF02','p_BF03','p_WUR','p_MX1A','p_MX1B','p_MX2A','p_MX2B','pk_BF01','pk_BF02','pk_BF03','pk_WUR','pk_MX1_5','pk_MX1_10','pk_MX2_5','pk_MX2_10'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='0';});['fs_BF01','fs_BF02','fs_BF03','fs_MX1A','fs_MX1B','fs_MX2A','fs_MX2B','fs_WUR_BF01'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});const uf=document.getElementById('useFrozenPrefix'); if(uf)uf.checked=true; frozenBaseline=null; stockLoadSummary={loaded:false,direct:0,compound:0,rows:0,source:'manual / restablecido'};regenerateCalendar();renderFreezeStatus();renderOpsProfileSummary();updateEngineFlags();}
+
+// ═══════════════════════════════════════════════════
+// SCHEDULER (v14 engine preserved + improvements)
+// ═══════════════════════════════════════════════════
+function runScenario(){ syncGoalsFromOrders({invalidatePlan:false});
+try{
+  const curStart=document.getElementById('start').value;
+  const curEnd=document.getElementById('end').value;
+  const currentSignature=calendarSignature();
+  if(!calendarData.length || calendarData[0].date!==curStart || calendarData[calendarData.length-1].date!==curEnd || lastCalendarSignature!==currentSignature){
+    calendarData=generateDays(curStart,curEnd,document.getElementById('holidays').value);
+    lastCalendarSignature=currentSignature;
+    renderCalendar();
+  }
+  updateEngineFlags();
+  ensureFrozenBaselineFromLocked();
+  const goals=getGoals(),initialStock=getStocks(),opsTotal=parseNum('ops'),opsProfile=parseOpsProfile(document.getElementById('opsProfile')?.value||''),mode=document.getElementById('mode').value,forced=getForcedPriorities(),forcedKit=getForcedKitPriorities();
+  const startMap=getFabStartDates();
+  scenarioInitialStock=copyObj(initialStock);
+  const workDays=calendarData.filter(d=>d.work&&(d.b1+d.b2+d.b3)>0).length;
+  if(!workDays){setStatus('Sin días laborales.');return;}
+  const stock={};STOCK_KEYS.forEach(k=>stock[k]=(initialStock[k]||0));
+  const kits={BF03:0,BF01:0,BF02:0,WUR:0,MX1_5:0,MX1_10:0,MX2_5:0,MX2_10:0};
+  const frozenActive=!!(frozenBaseline&&document.getElementById('useFrozenPrefix')?.checked&&frozenBaseline.frontierDate);
+  const frozenFrontierDate=frozenActive?String(frozenBaseline.frontierDate||''):'';
+  const freezeExactReuse=!!(frozenActive&&frozenBaseline.baselinePlanFull&&frozenBaseline.baselineOrderSignature&&frozenBaseline.baselineOrderSignature===getOrdersSignature(orders||[]));
+  if(freezeExactReuse){
+    lastResult=copyObj(markPlanOrderSignature(frozenBaseline.baselinePlanFull));
+    renderResult();
+    const ordStat=getCurrentPlanOrderStatus(lastResult,orders);const ordMiss=ordStat.filter(x=>!x.ok).length;
+    setStatus(`🔒 Reutilizando plan congelado sin cambios en los pedidos abiertos. ETD incumplidas: ${ordMiss}.`);
+    return;
+  }
+  if(frozenActive){
+    Object.assign(stock,copyObj(frozenBaseline.stockAfterFrontier||{}));
+    Object.assign(kits,copyObj(frozenBaseline.kitsProducedAfterFrontier||{}));
+  }
+  const globalOrder=stagesFor(goals,forced,forcedKit);const schedule=frozenActive?copyObj(frozenBaseline.schedulePrefix||[]):[],progress=frozenActive?copyObj(frozenBaseline.progressPrefix||[]):[];let currentIdx=0,violations=0;let lastFab=null,lastFabStreak=0;let campaignState=initCampaignState(stock);const pendingCleanByDate={};
+
+  (frozenActive?calendarData.filter(d=>String(d.date||'')>frozenFrontierDate):calendarData).forEach(day=>{ const dayOps=getOpsForDate(day.date,opsTotal,opsProfile);
+    if(!(day.work&&(day.b1+day.b2+day.b3)>0)){schedule.push({date:day.date,entries:[],ops:{b1:0,b2:0,b3:0},primary:null,secondary:null});return;}
+    const planCtx=getPlanningGoalsForDay(day.date,goals,kits);
+    const planningGoals=planCtx.goals;
+    const nextMilestone=planCtx.nextMilestone||null;
+    const order=stagesFor(planningGoals,forced,forcedKit);
+    while(currentIdx<globalOrder.length&&remainingGoal(globalOrder[currentIdx],goals,kits)<=0.001)currentIdx++;
+    const rankedToday=getDayFamilyRanking(day.date,planningGoals,kits,stock,order,forced);
+    const milestoneNeed=planCtx.milestone;
+    const milestoneFamilies=Object.keys((milestoneNeed&&milestoneNeed.deficits)||{}).filter(f=>Number(milestoneNeed.deficits[f]||0)>0).sort((a,b)=>Number(milestoneNeed.deficits[b]||0)-Number(milestoneNeed.deficits[a]||0));
+    const nextFamilies=Object.keys((nextMilestone&&nextMilestone.deficits)||{}).filter(f=>Number(nextMilestone.deficits[f]||0)>0).sort((a,b)=>Number(nextMilestone.deficits[b]||0)-Number(nextMilestone.deficits[a]||0));
+    const hardMilestoneMode=!!(milestoneNeed&&milestoneNeed.date&&milestoneFamilies.length);
+    let entries=[];let reserved={b1:0,b2:0,b3:0};
+    const pendingClean=(pendingCleanByDate[day.date]||[]);
+    pendingClean.forEach(pc=>{addOrMergeEntry(entries,{type:'semi',id:pc.id,label:pc.label,block:pc.block||'B1',ops:pc.ops,units:1,duration_min:pc.duration_min||30,partialOps:true});});
+    const primary=milestoneFamilies[0]||(rankedToday[0]?rankedToday[0].fam:(currentIdx<globalOrder.length?globalOrder[currentIdx]:null));
+    const secondary=milestoneFamilies[1]||nextFamilies[0]||(rankedToday[1]?rankedToday[1].fam:((currentIdx+1)<globalOrder.length?globalOrder[currentIdx+1]:null));
+    const active=(hardMilestoneMode?milestoneFamilies.slice(0,4):rankedToday.slice(0,Math.min(5,rankedToday.length)).map(x=>x.fam));
+    milestoneFamilies.slice().reverse().forEach(f=>{if(!active.includes(f))active.unshift(f);});
+    nextFamilies.slice(0,3).forEach(f=>{if(!active.includes(f))active.push(f);});
+    rankedToday.slice(0,6).forEach(x=>{if(!active.includes(x.fam))active.push(x.fam);});
+    if(primary&&!active.includes(primary))active.unshift(primary);
+    while(active.length>6)active.pop();
+    let fabChoices=[];
+    const fabFamilyPool=[...new Set([].concat(active||[],order||[],globalOrder||[],milestoneFamilies||[],nextFamilies||[],rankedToday.slice(0,7).map(x=>x.fam)))];
+    fabFamilyPool.forEach(fam=>{(FAMILY_FABS[fam]||[]).forEach(fab=>{
+      const inv=FABACTS[fab].inv;
+      const nearNeed=fabricationNeedUnits(fab,stock,planningGoals,kits);
+      const horizonNeed=fabricationNeedUnits(fab,stock,goals,kits);
+      const needUnits=Math.max(nearNeed,horizonNeed*0.55);
+      const needBatches=Math.max(fabricationNeedBatches(fab,stock,planningGoals,kits), Math.ceil((horizonNeed*0.55)/((FABACTS[fab]&&FABACTS[fab].output)||1)));
+      if(needBatches<=0) return;
+      let score=0;
+      if(fam.startsWith('MX1'))score=invDeficitForFamily('MX1_5',stock,planningGoals,kits,inv)+invDeficitForFamily('MX1_10',stock,planningGoals,kits,inv)+0.55*(invDeficitForFamily('MX1_5',stock,goals,kits,inv)+invDeficitForFamily('MX1_10',stock,goals,kits,inv));
+      else if(fam.startsWith('MX2'))score=invDeficitForFamily('MX2_5',stock,planningGoals,kits,inv)+invDeficitForFamily('MX2_10',stock,planningGoals,kits,inv)+0.55*(invDeficitForFamily('MX2_5',stock,goals,kits,inv)+invDeficitForFamily('MX2_10',stock,goals,kits,inv));
+      else score=invDeficitForFamily(fam,stock,planningGoals,kits,inv)+0.55*invDeficitForFamily(fam,stock,goals,kits,inv);
+      score += needUnits*12;
+      if(nextMilestone&&nextMilestone.date){ const nd=Number((nextMilestone.deficits&&nextMilestone.deficits[fam])||0); if(nd>0) score += nd*18; }
+      if(hasForcedPriority(forced)){
+        if((forced[fab]||0)>0)score*=1+(10-Math.min(9,forced[fab]))*0.6;
+        if((forced[fam]||0)>0)score*=1+(10-Math.min(9,forced[fam]))*0.25;
+        const ff=FORCED_FAB_TO_FAMILY[fab];
+        if(ff&& (forced[fab]||0)===0 && (forced[ff]||0)>0)score*=1+(10-Math.min(9,forced[ff]))*0.2;
+      }
+      if(lastFab===fab){ score*= (lastFabStreak<3?1.95:1.55); }
+      const fabFam=String(fab).replace(/[AB]$/,''); const lastFam=String(lastFab||'').replace(/[AB]$/,'');
+      const sameCampaign=(fabFam===lastFam)&&/MX/.test(fabFam);
+      if(sameCampaign && lastFab!==fab && lastFabStreak<2){ score*=0.82; }
+      const cbase=fabBase(fab); const cstate=(campaignState&&campaignState[cbase])||{openA:0,lastPart:''};
+      if(/MX/.test(String(fab))){
+        if(fabPart(fab)==='A'){ if(Number(cstate.openA||0)===0) score*=1.35; else score*=1.08; }
+        else { score*= (Number(cstate.openA||0)>0 ? (1+Math.min(2,Number(cstate.openA||0))*0.18) : 0); }
+      }
+      if(score>0)fabChoices.push({score,fab,fam});
+    });});
+    fabChoices=fabChoices.filter(x=>fabEnabledOnDate(x.fab,day.date,startMap)).filter(x=>canStartFabBySequence(x.fab,campaignState));
+    fabChoices.sort((a,b)=>b.score-a.score);
+    if(fabChoices.length){
+      const fab=fabChoices[0].fab,fa=FABACTS[fab];
+      if(day.b3===0){fabChoices=[];} // Skip fab on Saturday
+      else{
+        closeCampaignOnSwitch(lastFab,fab,campaignState);
+        reserved.b1=fa.b1_ops;reserved.b2=fa.env_ops;reserved.b3=fa.env_ops;
+        addOrMergeEntry(entries,{type:'fab',id:fab,label:fa.label,block:'B1',ops:fa.b1_ops,units:1});
+        addOrMergeEntry(entries,{type:'env_res',id:'ENV_'+fab,label:(fa.env_label||('ENVASADO '+fa.label.replace('FABRICACION ','').replace('FABRICACIÓN ',''))),block:'B2+B3',ops:fa.env_ops,units:fa.output});
+        // ── LIMPIEZA asociada al batch ──
+const dayIdx=calendarData.findIndex(cd=>cd.date===day.date);
+const nextWorkDay=calendarData.slice(dayIdx+1).find(cd=>cd.work&&(cd.b1+cd.b2+cd.b3)>0);
+const isLastWeek=!nextWorkDay||(['Vie','Sáb','Sab'].includes(day.dow)&&nextWorkDay&&['Lun'].includes(nextWorkDay.dow));
+let peekNextFab=null;
+fabChoices.slice(1).forEach(fc=>{if(!peekNextFab&&fc.fab!==fab)peekNextFab=fc.fab;});
+if(!peekNextFab){
+  const allFabIds=Object.keys(FABACTS);
+  for(const nf of allFabIds){if(nf!==fab&&fabricationNeedBatches(nf,stock,goals,kits)>0){peekNextFab=nf;break;}}
+}
+const isLastBatch=!peekNextFab&&fabChoices.length<=1;
+// Regla operativa:
+// - limpieza de mezclador queda el mismo día del batch, en B2 (tras fabricación B1)
+// - limpieza de extrusor queda al comienzo del siguiente día hábil, en B1
+const cleaning=getCleaningNeeded(fab,peekNextFab,day,nextWorkDay,isLastBatch);
+if(cleaning){
+  if(cleaning.mezclador){
+    const lbl=peekNextFab&&peekNextFab!==fab?'LIMPIEZA MEZCLADOR ('+fab+'→'+peekNextFab+')':'LIMPIEZA MEZCLADOR (post '+fab+')';
+    if(cleaning.mezclador.deferToNextDay && nextWorkDay){
+      (pendingCleanByDate[nextWorkDay.date]||(pendingCleanByDate[nextWorkDay.date]=[])).push({id:'LIMP_MEZC',label:lbl,block:'B1',ops:cleaning.mezclador.ops,duration_min:30});
+    } else {
+      addOrMergeEntry(entries,{type:'semi',id:'LIMP_MEZC',label:lbl,block:'B2',ops:cleaning.mezclador.ops,units:1,duration_min:30,partialOps:true});
+    }
+  }
+  if(cleaning.extrusor && nextWorkDay){
+    const lbl=peekNextFab&&peekNextFab!==fab?'LIMPIEZA EXTRUSOR ('+fab+'→'+peekNextFab+')':'LIMPIEZA EXTRUSOR (post ENV '+fab+')';
+    (pendingCleanByDate[nextWorkDay.date]||(pendingCleanByDate[nextWorkDay.date]=[])).push({id:'LIMP_EXTR',label:lbl,block:'B1',ops:cleaning.extrusor.ops,duration_min:30});
+  }
+}
+updateCampaignStateAfterFab(fab,campaignState);
+        if(lastFab===fab) lastFabStreak++; else { lastFab=fab; lastFabStreak=1; }
+      }
+    }
+
+    const dayKitsStarted=new Set();
+    const daySemiStarted=new Set();
+    const blockList=[['B1',day.b1,'b1'],['B2',day.b2,'b2'],['B3',day.b3,'b3']].filter(x=>x[1]>0);
+
+    blockList.forEach(([blockLabel,hrs,key],blockIdx)=>{
+      let ops=currentBlockRemaining(entries,day,blockLabel,dayOps);
+      CURRENT_GROUP_LIMITS=getDynamicGroupLimits(ops);
+      const remainingBlocks=blockList.length-blockIdx;
+      const groupUsage={POTE_LABEL:0,BOTTLE_LABEL:0,KIT:0};
+      const assignedPerAct={};
+
+      // kits: max 2 centers total per block
+      while(true){
+        let kitCands=[];const famOrder=active.concat(order.filter(x=>!active.includes(x)));
+        famOrder.forEach(fam=>{
+          const dynKitLim=dynamicKitLimit(ops,fam,order,active,stock,goals,kits,hrs,assignedPerAct,day.date);if(groupUsage.KIT>=dynKitLim) return;
+          const rem=remainingGoal(fam,planningGoals,kits);if(rem<=0||ops<FAMILIES[fam].kitOps)return;
+          if(!respectsFabStartForFamily(fam,day.date))return;
+          let rawOut=Math.min(rem,FAMILIES[fam].kitCap*hrs/8,possibleKits(fam,stock));
+          let out=normalizeKitOut(fam,rawOut,rem,possibleKits(fam,stock));if(out<=0)return;
+          const alreadyStartedToday=dayKitsStarted.has(fam);
+          if(!alreadyStartedToday){
+            const oneBlockCap=FAMILIES[fam].kitCap*hrs/8;
+            const isFinalSaldo=rem<=oneBlockCap*1.2;
+            if(!isFinalSaldo && remainingBlocks<2) return;
+            if(!isFinalSaldo){
+              const twoBlockMin=Math.max(KIT_MIN_LOT[fam]||1, Math.floor(FAMILIES[fam].kitCap*3/8));
+              if(Math.floor(possibleKits(fam,stock))<twoBlockMin) return;
+            }
+          }
+          let w=fam===primary?3:fam===secondary?2:1;
+          const kp=Number((forcedKit&&forcedKit[fam])||0);
+          if(kp>0)w*=1+(10-Math.min(9,kp))*0.35;
+          kitCands.push({score:w*out,fam,out});
+        });
+        if(!kitCands.length)break;
+        kitCands.sort((a,b)=>b.score-a.score);
+        const ch=kitCands[0];
+        const _kitEntry={type:'kit',id:'KIT_'+ch.fam,label:'ARMADO KIT '+FAMILIES[ch.fam].label,family:ch.fam,block:blockLabel,ops:FAMILIES[ch.fam].kitOps,units:ch.out};
+        if(!canUseGroup(groupUsage,ch.fam,'kit',FAMILIES[ch.fam].kitOps)||!entryFitsBlock(entries,day,blockLabel,dayOps,_kitEntry))break;
+        
+        kits[ch.fam]+=ch.out;
+        dayKitsStarted.add(ch.fam);
+        consumeGroup(groupUsage,ch.fam,'kit',FAMILIES[ch.fam].kitOps);
+        if(useLabMapForKit(ch.fam)){
+          const m=LAB_RES_MAP[ch.fam];
+          let remNeed=ch.out;
+          const takeLab=Math.min(stock[m.lab]||0,remNeed); stock[m.lab]=(stock[m.lab]||0)-takeLab; remNeed-=takeLab;
+          if(remNeed>0){stock[m.res]=Math.max(0,(stock[m.res]||0)-remNeed);stock[m.pot]=Math.max(0,(stock[m.pot]||0)-remNeed);}
+          Object.entries(FAMILIES[ch.fam].bom).forEach(([inv,qty])=>{if(inv===m.res||inv===m.pot)return;stock[inv]=Math.max(0,(stock[inv]||0)-qty*ch.out);});
+        } else {
+          Object.entries(FAMILIES[ch.fam].bom).forEach(([inv,qty])=>{stock[inv]=Math.max(0,(stock[inv]||0)-qty*ch.out);});
+        }
+        stock[KIT_STOCK_MAP[ch.fam]]=(scenarioInitialStock[KIT_STOCK_MAP[ch.fam]]||0)+kits[ch.fam];
+        addOrMergeEntry(entries,_kitEntry);
+          ops=currentBlockRemaining(entries,day,blockLabel,dayOps);
+      }
+
+      
+      for(let pass=1;pass<=3;pass++){
+        let something=false;let semis=[];
+        [[3,primary],[2,secondary]].forEach(([weight,fam])=>{
+          if(!fam)return;
+          (FAMILY_PREP_ACTS[fam]||[]).forEach(act=>{
+            const ad=ACTS[act];if(ops<ad.ops)return;
+            // Check prerequisites
+            const _prereqs=ACT_PREREQS[act];
+            if(_prereqs&&_prereqs.some(p=>(stock[p]||0)<=0))return;
+            if(!canUseGroup(groupUsage,act,'semi',ad.ops)) return;
+            const used=assignedPerAct[act]||0;const limit=getDynamicParallelLimit(act,ops,hrs);
+            if(used>=Math.min(limit,pass))return;
+            const inv=ad.inv;
+            let deficit=invDeficitForFamily(fam,stock,planningGoals,kits,inv);
+            if(fam.startsWith('MX1')&&(inv==='env_solv'||inv==='solv_dur_prep'))deficit=invDeficitForFamily('MX1_5',stock,planningGoals,kits,inv)+invDeficitForFamily('MX1_10',stock,planningGoals,kits,inv);
+            if(fam.startsWith('MX2')&&(inv==='env_solv'||inv==='solv_dur_prep'))deficit=invDeficitForFamily('MX2_5',stock,planningGoals,kits,inv)+invDeficitForFamily('MX2_10',stock,planningGoals,kits,inv);
+            // v100.1 FIX: bulks compartidos consumidos por múltiples familias deben sumar todas
+            if(typeof isBulkSemiKey==='function' && isBulkSemiKey(inv)){
+              let total=0;
+              Object.keys(FAMILIES).forEach(f2=>{ total += invDeficitForFamily(f2,stock,planningGoals,kits,inv); });
+              deficit=total;
+            }
+            if(deficit<=0)return;const unitOut=ad.cap8*hrs/8;
+            const minOutput=ad.cap8*0.15;
+            const alreadyStarted=daySemiStarted.has(act);
+            const isFinalDeficit=deficit<=minOutput*1.5;
+            if(!alreadyStarted && !isFinalDeficit && unitOut<minOutput)return;
+            let score=weight*Math.min(unitOut,deficit)/ad.ops;
+            if(primary==='BF03'&&['CAT_BF03','ETI_POTE_BF03'].includes(act))score*=1.18;
+            if(primary==='BF03'&&['ENV_IMP_FA','ENV_IMP_FB'].includes(act))score*=1.55;
+            if(primary==='BF03'&&['ETI_IMP_FA','ETI_IMP_FB'].includes(act))score*=2.2;
+            if(primary==='BF03'&&act==='CONDONEADO_IMP')score*=1.25;
+            if(primary==='BF01'&&['ETI_POTE_BF01','ENV_CAT_0102','ETI_CAT_0102'].includes(act))score*=1.12;
+            if((primary==='MX1_5'||primary==='MX1_10')&&['ETI_SOLV_DUR','ETI_BALDE5','ETI_BALDE10'].includes(act))score*=1.14;
+            if(alreadyStarted)score*=1.5;
+            score/=(1+used*0.9);
+            mergeSemiCandidate(semis,{score,act,out:unitOut});
+          });
+        });
+        semis.sort((a,b)=>b.score-a.score);
+        for(const ch of semis){
+          const ad=ACTS[ch.act];if(ops<ad.ops)continue;
+          if(!canUseGroup(groupUsage,ch.act,'semi',ad.ops)) continue;
+          const used=assignedPerAct[ch.act]||0;if(used>=getDynamicParallelLimit(ch.act,ops,hrs))continue;
+          if(pass===1&&used>0)continue;
+          // Limit condoneado by available source material and consume it
+          let actualOut=ch.out;
+          const srcInfo=ACT_SOURCE_CONSUME[ch.act];
+          if(srcInfo){
+            const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume];
+            const avail=Math.min(...sources.map(s=>Number(stock[s]||0)));
+            actualOut=Math.min(actualOut,Math.floor(avail));
+            if(actualOut<=0){assignedPerAct[ch.act]=(assignedPerAct[ch.act]||0)+999;break;}
+            sources.forEach(s=>{stock[s]=Math.max(0,(stock[s]||0)-actualOut);});
+          }
+          const _semiEntry={type:'semi',id:ch.act,label:ACTS[ch.act].label,block:blockLabel,ops:ad.ops,units:actualOut};
+          if(!entryFitsBlock(entries,day,blockLabel,dayOps,_semiEntry)) { if(srcInfo){const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume]; sources.forEach(s=>{stock[s]=(stock[s]||0)+actualOut;}); } break; }
+          stock[ad.inv]=(stock[ad.inv]||0)+actualOut;assignedPerAct[ch.act]=used+1;
+          daySemiStarted.add(ch.act);consumeGroup(groupUsage,ch.act,'semi',ad.ops);
+          addOrMergeEntry(entries,_semiEntry);
+          ops=currentBlockRemaining(entries,day,blockLabel,dayOps);
+          something=true;if(ops<1)break;
+        }
+        if(!something)break;
+      }
+
+      while(ops>0){
+        const semis=globalSemiCandidates(order,active,stock,planningGoals,kits,ops,hrs,assignedPerAct,day.date,0);
+        if(!semis.length)break;
+        const ch=semis[0];const ad=ACTS[ch.act];const used=assignedPerAct[ch.act]||0;
+        if(ops<ad.ops||used>=getDynamicParallelLimit(ch.act,ops,hrs))break;
+        if(!canUseGroup(groupUsage,ch.act,'semi',ad.ops)) break;
+        const minOut=ad.cap8*0.15;
+        if(!daySemiStarted.has(ch.act)&&ch.out<minOut)break;
+        // Limit condoneado by available source material and consume it
+          let actualOut=ch.out;
+          const srcInfo=ACT_SOURCE_CONSUME[ch.act];
+          if(srcInfo){
+            const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume];
+            const avail=Math.min(...sources.map(s=>Number(stock[s]||0)));
+            actualOut=Math.min(actualOut,Math.floor(avail));
+            if(actualOut<=0){assignedPerAct[ch.act]=(assignedPerAct[ch.act]||0)+999;break;}
+            sources.forEach(s=>{stock[s]=Math.max(0,(stock[s]||0)-actualOut);});
+          }
+          const _semiEntry2={type:'semi',id:ch.act,label:ACTS[ch.act].label,block:blockLabel,ops:ad.ops,units:actualOut};
+          if(!entryFitsBlock(entries,day,blockLabel,dayOps,_semiEntry2)) { if(srcInfo){const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume]; sources.forEach(s=>{stock[s]=(stock[s]||0)+actualOut;}); } break; }
+          stock[ad.inv]=(stock[ad.inv]||0)+actualOut;assignedPerAct[ch.act]=used+1;
+        daySemiStarted.add(ch.act);consumeGroup(groupUsage,ch.act,'semi',ad.ops);
+        addOrMergeEntry(entries,_semiEntry2);
+        ops=currentBlockRemaining(entries,day,blockLabel,dayOps);
+      }
+    });
+
+    const totalOpHours=blockList.reduce((s,[,hrs])=>s+dayOps*hrs,0);
+    const usedOpHours=entries.reduce((s,e)=>{const hrs=e.block==='B2+B3'?(day.b2+day.b3):(e.block==='B1'?day.b1:e.block==='B2'?day.b2:day.b3);if(e.partialOps&&e.duration_min)return s+(Number(e.ops||0)*(e.duration_min/60));return s+(Number(e.ops||0)*Number(hrs||0));},0);
+    if(blockList.length && (entries.length===0 || usedOpHours<totalOpHours*0.96)){
+      blockList.forEach(([blockLabel,hrs,key])=>{
+        let opsUsed=currentBlockUsage(entries,day,blockLabel);
+        const groupUsage={POTE_LABEL:0,BOTTLE_LABEL:0,KIT:0};
+        const assignedPerAct={};
+        entries.forEach(e=>{
+          const applies=(e.block===blockLabel)||(e.block==='B2+B3'&&(blockLabel==='B2'||blockLabel==='B3'));
+          if(!applies)return;
+          const grp=groupForActivity(e.id,e.type);if(grp){const inc=grp==='KIT'?1:(e.ops||0);groupUsage[grp]=(groupUsage[grp]||0)+inc;}
+          if(e.type==='semi')assignedPerAct[e.id]=(assignedPerAct[e.id]||0)+1;
+        });
+        let ops=Math.max(0,dayOps-opsUsed);
+        CURRENT_GROUP_LIMITS=getDynamicGroupLimits(ops);
+        let guard=0;
+        while(ops>0&&guard<12){
+          guard++;
+          const semis=globalSemiCandidates(globalOrder,[...new Set((active.length?active:rankedToday.map(x=>x.fam)).concat((nextFamilies||[])).concat(order||[]).concat(globalOrder||[]))],stock,goals,kits,ops,hrs,assignedPerAct,day.date,10.0);
+          if(!semis.length)break;
+          const ch=semis[0];const ad=ACTS[ch.act];const used=assignedPerAct[ch.act]||0;
+          if(ops<ad.ops||used>=getDynamicParallelLimit(ch.act,ops,hrs)||!canUseGroup(groupUsage,ch.act,'semi',ad.ops))break;
+          // Limit condoneado by available source material and consume it
+          let actualOut=ch.out;
+          const srcInfo=ACT_SOURCE_CONSUME[ch.act];
+          if(srcInfo){
+            const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume];
+            const avail=Math.min(...sources.map(s=>Number(stock[s]||0)));
+            actualOut=Math.min(actualOut,Math.floor(avail));
+            if(actualOut<=0){assignedPerAct[ch.act]=(assignedPerAct[ch.act]||0)+999;break;}
+            sources.forEach(s=>{stock[s]=Math.max(0,(stock[s]||0)-actualOut);});
+          }
+          const _refSemi={type:'semi',id:ch.act,label:ACTS[ch.act].label,block:blockLabel,ops:ad.ops,units:actualOut};
+          if(!entryFitsBlock(entries,day,blockLabel,dayOps,_refSemi)) { if(srcInfo){const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume]; sources.forEach(s=>{stock[s]=(stock[s]||0)+actualOut;}); } break; }
+          stock[ad.inv]=(stock[ad.inv]||0)+actualOut;assignedPerAct[ch.act]=used+1;consumeGroup(groupUsage,ch.act,'semi',ad.ops);daySemiStarted.add(ch.act);
+          addOrMergeEntry(entries,_refSemi);
+          ops=currentBlockRemaining(entries,day,blockLabel,dayOps);
+        }
+        while(ops>=3){
+          const rankMix=[...rankedToday].concat((nextFamilies||[]).map(f=>({fam:f,urg:450,dueDef:Number((nextMilestone&&nextMilestone.deficits&&nextMilestone.deficits[f])||0),nextDef:220}))).concat((globalOrder||[]).filter(f=>!rankedToday.some(x=>x.fam===f)).map((f,i)=>({fam:f,urg:220-i*5,dueDef:0,nextDef:80})));
+          const kitCands=getGlobalKitCandidates(rankMix,stock,goals,kits,ops,hrs,groupUsage);
+          if(!kitCands.length)break;
+          const ch=kitCands[0];
+          const _refKit={type:'kit',id:'KIT_'+ch.fam,label:'ARMADO KIT '+FAMILIES[ch.fam].label,family:ch.fam,block:blockLabel,ops:FAMILIES[ch.fam].kitOps,units:ch.out};
+          if(!entryFitsBlock(entries,day,blockLabel,dayOps,_refKit)) break;
+          kits[ch.fam]+=ch.out;consumeGroup(groupUsage,ch.fam,'kit',FAMILIES[ch.fam].kitOps);
+          if(useLabMapForKit(ch.fam)){const m=LAB_RES_MAP[ch.fam];let remNeed=ch.out;const takeLab=Math.min(stock[m.lab]||0,remNeed);stock[m.lab]=(stock[m.lab]||0)-takeLab;remNeed-=takeLab;if(remNeed>0){stock[m.res]=Math.max(0,(stock[m.res]||0)-remNeed);stock[m.pot]=Math.max(0,(stock[m.pot]||0)-remNeed);}Object.entries(FAMILIES[ch.fam].bom).forEach(([inv,qty])=>{if(inv===m.res||inv===m.pot)return;stock[inv]=Math.max(0,(stock[inv]||0)-qty*ch.out);});}else{Object.entries(FAMILIES[ch.fam].bom).forEach(([inv,qty])=>{stock[inv]=Math.max(0,(stock[inv]||0)-qty*ch.out);});}
+          stock[KIT_STOCK_MAP[ch.fam]]=(scenarioInitialStock[KIT_STOCK_MAP[ch.fam]]||0)+kits[ch.fam];
+          addOrMergeEntry(entries,_refKit);
+          ops=currentBlockRemaining(entries,day,blockLabel,dayOps);
+          if(groupUsage.KIT>=((CURRENT_GROUP_LIMITS&&CURRENT_GROUP_LIMITS.KIT)||(GROUP_LIMITS.KIT||2))) break;
+        }
+      });
+    }
+
+
+    // ═══ POST-CLEANING: Schedule tasks for freed cleaning operators ═══
+    // After 30 min of cleaning, those operators are free for remaining block time
+    const cleanEntries=entries.filter(e=>e.duration_min&&e.duration_min>0);
+    if(cleanEntries.length>0){
+      cleanEntries.forEach(ce=>{
+        const blockKey=ce.block==='B1'?'b1':ce.block==='B2'?'b2':'b3';
+        const blockHrs=day[blockKey]||0;
+        if(blockHrs<=0)return;
+        const remainingHrs=Math.max(0,blockHrs-(ce.duration_min/60));
+        if(remainingHrs<=0.25)return;
+        const freedOps=ce.ops;// typically 2
+        const _pcAssigned={};entries.forEach(e=>{if(e.type==='semi')_pcAssigned[e.id]=(_pcAssigned[e.id]||0)+1;});
+        // Max 2 post-clean tasks (1 per freed operator, max freedOps tasks)
+        let postTaskCount=0;
+        let postOpsLeft=freedOps;
+        while(postTaskCount<freedOps&&postOpsLeft>0){
+          const postSemis=globalSemiCandidates(globalOrder,[...new Set((active.length?active:rankedToday.map(x=>x.fam)).concat((nextFamilies||[])).concat(order||[]).concat(globalOrder||[]))],stock,planningGoals,kits,postOpsLeft,remainingHrs,_pcAssigned,day.date,4.0);
+          if(!postSemis.length)break;
+          const ps=postSemis[0];
+          const ad=ACTS[ps.act];
+          if(!ad||postOpsLeft<ad.ops)break;
+          let postOut=Math.round(ad.cap8*remainingHrs/8);
+          const srcInfo=ACT_SOURCE_CONSUME[ps.act];
+          if(srcInfo){
+            const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume];
+            const avail=Math.min(...sources.map(s=>Number(stock[s]||0)));
+            postOut=Math.min(postOut,Math.floor(avail));
+            if(postOut<=0){_pcAssigned[ps.act]=(_pcAssigned[ps.act]||0)+999;continue;}
+            sources.forEach(s=>{stock[s]=Math.max(0,(stock[s]||0)-postOut);});
+          }
+          if(postOut<=0)break;
+          const _postEntry={type:'semi',id:ps.act,label:ad.label,block:ce.block,ops:ad.ops,units:postOut,isPostClean:true,postCleanHrs:remainingHrs};
+          if(!entryFitsBlock(entries,day,ce.block,dayOps,_postEntry)) { if(srcInfo){const sources=Array.isArray(srcInfo.consume)?srcInfo.consume:[srcInfo.consume]; sources.forEach(s=>{stock[s]=(stock[s]||0)+postOut;}); } break; }
+          stock[ad.inv]=(stock[ad.inv]||0)+postOut;
+          _pcAssigned[ps.act]=(_pcAssigned[ps.act]||0)+1;
+          addOrMergeEntry(entries,_postEntry);
+          postOpsLeft-=ad.ops;
+          postTaskCount++;
+        }
+      });
+    }
+
+    // Resinas envasadas quedan disponibles recién al cierre de la jornada
+    entries.filter(e=>e.type==='env_res').forEach(e=>{const fk=String(e.id||'').replace('ENV_','');if(FABACTS[fk]&&FABACTS[fk].inv)stock[FABACTS[fk].inv]=(stock[FABACTS[fk].inv]||0)+Number(e.units||0);});
+
+    // Rigorous operator validation by block using effective occupancy for partial/post-clean tasks
+    entries.forEach(e=>{
+      ['B1','B2','B3'].forEach(bn=>{ if(entryAppliesToBlock(e,bn)){ const hrs=blockHoursForLabel(day,bn); e.opsEffectiveByBlock=e.opsEffectiveByBlock||{}; e.opsEffectiveByBlock[bn]=effectiveOpsForEntryInBlock(e,hrs); }});
+    });
+    const opParallel=computePeakOpsUsage(entries,day);
+    const blockOpsUsed=computeBlockOpsUsage(entries,day);
+    const blockOpsEffective=computeBlockOpsEffectiveUsage(entries,day);
+    ['b1','b2','b3'].forEach(k=>{ if(Number(opParallel[k]||0)>dayOps+1e-9) violations++; });
+    // additional validation: max 2 kit centers per block, bottle labels 4 effective ops, pot labels 4 effective ops
+    ['B1','B2','B3'].forEach(bn=>{
+      let kitCenters=0,poteOps=0,bottleOps=0;
+      const hrs=blockHoursForLabel(day,bn);
+      entries.forEach(e=>{
+        if(!entryAppliesToBlock(e,bn)) return;
+        const eff=effectiveOpsForEntryInBlock(e,hrs);
+        if(e.type==='kit') kitCenters+=eff/3;
+        if(POTE_LABEL_ACTS.has(e.id||'')) poteOps+=eff;
+        if(BOTTLE_LABEL_ACTS.has(e.id||'')) bottleOps+=eff;
+      });
+      if(kitCenters>2.001||poteOps>4.001||bottleOps>4.001||Number(blockOpsUsed[bn]||0)>dayOps+1e-9) violations++;
+    });
+    schedule.push({date:day.date,primary,secondary,entries,ops:opParallel,blockOpsUsed,blockOpsEffective,opsLimit:dayOps,stock:copyObj(stock),kits:copyObj(kits)});
+    progress.push({date:day.date,BF03:achievedQtyForPlanning('BF03',kits),BF01:achievedQtyForPlanning('BF01',kits),BF02:achievedQtyForPlanning('BF02',kits),WUR:achievedQtyForPlanning('WUR',kits),MX1_5:achievedQtyForPlanning('MX1_5',kits),MX1_10:achievedQtyForPlanning('MX1_10',kits),MX2_5:achievedQtyForPlanning('MX2_5',kits),MX2_10:achievedQtyForPlanning('MX2_10',kits)});
+  });
+
+  const displayKitsRaw=copyObj(kits);
+  let candidatePlan={goals,initialStock,opsTotal,opsProfile,schedule,progress,finalStock:stock,kits,displayKits:displayKitsRaw,violations};
+  if(frozenActive&&frozenBaseline&&frozenBaseline.baselinePlanFull&&isDemandRelaxationAgainstBaseline(frozenBaseline.baselineOrdersSnapshot||[], orders||[])){
+    candidatePlan=preferPlan(candidatePlan, copyObj(markPlanOrderSignature(frozenBaseline.baselinePlanFull)), orders||[]);
+  }
+  const candidateAnalytics=getPlanAnalytics(candidatePlan,orders||[]);
+  candidatePlan.analytics=candidateAnalytics;
+  const _lastDaily=(candidateAnalytics.daily||[]).length?(candidateAnalytics.daily||[])[(candidateAnalytics.daily||[]).length-1]:null;
+  const _finalAvail=copyObj((_lastDaily&&(_lastDaily.cumulativeAvail||_lastDaily.cumulativePT))||candidatePlan.kits||makeFamilyMap());
+  candidatePlan.displayKits=_finalAvail;
+  candidatePlan.progress=(candidateAnalytics.daily||[]).map(d=>({date:d.date,BF03:Number(((d.cumulativeAvail||d.cumulativePT||{}).BF03)||0),BF01:Number(((d.cumulativeAvail||d.cumulativePT||{}).BF01)||0),BF02:Number(((d.cumulativeAvail||d.cumulativePT||{}).BF02)||0),WUR:Number(((d.cumulativeAvail||d.cumulativePT||{}).WUR)||0),MX1_5:Number(((d.cumulativeAvail||d.cumulativePT||{}).MX1_5)||0),MX1_10:Number(((d.cumulativeAvail||d.cumulativePT||{}).MX1_10)||0),MX2_5:Number(((d.cumulativeAvail||d.cumulativePT||{}).MX2_5)||0),MX2_10:Number(((d.cumulativeAvail||d.cumulativePT||{}).MX2_10)||0)}));
+  lastResult=candidatePlan;
+  renderResult();
+  const total=Object.values(candidatePlan.displayKits||{}).reduce((a,b)=>a+b,0);
+  const ordStat=getCurrentPlanOrderStatus(lastResult,orders);const ordMiss=ordStat.filter(x=>!x.ok).length;
+  setStatus(`Escenario ejecutado (ETD mandante). Kits: ${fmt(total,0)}. Vulnera restricciones: ${violations}. ETD incumplidas: ${ordMiss}.`);
+}catch(err){
+  console.error(err);
+  setStatus('❌ Error al ejecutar escenario: '+(err && err.message ? err.message : err));
+}
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER RESULTS
+// ═══════════════════════════════════════════════════
+
+function renderResult(){
+  if(!lastResult)return;
+  const{goals,schedule,progress,displayKits,violations}=lastResult;
+  const analytics=getPlanAnalytics(lastResult,orders);
+  lastResult.analytics=analytics;
+  lastResult.finalStock=copyObj(analytics.finalStock);
+  const orderStatus=getCurrentPlanOrderStatus(lastResult,orders);
+  const total=Object.values(displayKits).reduce((a,b)=>a+b,0),targetTotal=Object.values(goals).reduce((a,b)=>a+b,0),achieved=achievedTotal(displayKits,goals);
+  let first='-',last='-';
+  for(const p of progress){const t=Object.values(p).filter((_,i)=>i>0).reduce((a,b)=>a+(typeof b==='number'?b:0),0);if(t>0&&first==='-')first=p.date;if(t>0)last=p.date;}
+  document.getElementById('kpi_total').textContent=fmt(total);
+  document.getElementById('kpi_fill').textContent=targetTotal>0?((100*achieved/targetTotal).toFixed(1)+'%'):'0%';
+  document.getElementById('kpi_first').textContent=first;document.getElementById('kpi_last').textContent=last;
+  document.getElementById('kpi_viol').textContent=violations;
+
+  const finalNet=(analytics.daily.length?analytics.daily[analytics.daily.length-1].netKits:makeFamilyMap());
+  const totalDispatched=makeFamilyMap();
+  analytics.daily.forEach(d=>{Object.keys(totalDispatched).forEach(f=>{totalDispatched[f]+=Number(d.dispatched[f]||0);});});
+
+  const etdOk=orderStatus.filter(x=>x.ok).length;
+  let res='<div class="small" style="margin-bottom:8px">Cumplimiento global = producción planificada + stock inicial de kits al cierre del horizonte. Cumplimiento ETD = pedidos efectivamente despachables en su fecha. El motor prioriza la ETD no cumplida más próxima, pero rellena capacidad con avance útil del siguiente hito y del horizonte para evitar ociosidad y cambios ineficientes. ETD cumplidas: '+etdOk+'/'+orderStatus.length+'.</div>';
+  res+='<table><thead><tr><th>Línea</th><th>Objetivo</th><th>Plan+Inicial</th><th>Despachado</th><th>Stock neto final</th><th>% meta</th></tr></thead><tbody>';
+  Object.keys(FAMILIES).forEach(f=>{const obj=goals[f]||0,got=displayKits[f]||0,net=finalNet[f]||0,disp=totalDispatched[f]||0,ach=Math.min(got,obj||0);if(!obj&&!got&&!net&&!disp)return;
+    res+=`<tr><td>${FAMILIES[f].label}</td><td>${fmt(obj)}</td><td>${fmt(got,0)}</td><td>${fmt(disp,0)}</td><td><b>${fmt(net,0)}</b></td><td>${obj?(100*ach/obj).toFixed(1)+'%':'-'}</td></tr>`;});
+  res+='</tbody></table>';
+  if(orderStatus.length){res+='<div class="small" style="margin:10px 0 6px;color:#9fb0da">Cumplimiento del plan actual por pedido / ETD</div>';res+='<table><thead><tr><th>Fecha ETD</th><th>Cliente</th><th>Solicitado</th><th>Despachable</th><th>Estado</th></tr></thead><tbody>';orderStatus.forEach(s=>{const reqTxt=FAMS_ORDER.filter(f=>Number(s.delta[f]||0)>0).map(f=>f.replace('_',' ')+':'+fmt(s.delta[f],0)).join(' · ');const dspTxt=FAMS_ORDER.filter(f=>Number(s.delta[f]||0)>0).map(f=>f.replace('_',' ')+':'+fmt((s.dispatched&&s.dispatched[f])||0,0)).join(' · ');res+=`<tr><td>${s.date}</td><td>${s.client||''}</td><td>${reqTxt}</td><td>${dspTxt}</td><td>${s.ok?'✅ Completo':'🔴 Parcial'}</td></tr>`;});res+='</tbody></table>'; }
+  document.getElementById('resumenBody').innerHTML=res;
+
+  let av='<thead><tr><th>Fecha</th><th>BF03</th><th>BF01</th><th>BF02</th><th>WUR</th><th>MX1 5</th><th>MX1 10</th><th>MX2 5</th><th>MX2 10</th><th>Total</th></tr></thead><tbody>';
+  progress.forEach(p=>{const td=p.BF03+p.BF01+p.BF02+(p.WUR||0)+p.MX1_5+p.MX1_10+p.MX2_5+p.MX2_10;if(!td)return;
+    av+=`<tr><td>${p.date}</td><td>${fmt(p.BF03)}</td><td>${fmt(p.BF01)}</td><td>${fmt(p.BF02)}</td><td>${fmt(p.WUR||0)}</td><td>${fmt(p.MX1_5)}</td><td>${fmt(p.MX1_10)}</td><td>${fmt(p.MX2_5)}</td><td>${fmt(p.MX2_10)}</td><td><b>${fmt(td)}</b></td></tr>`;});
+  document.getElementById('avanceTable').innerHTML=av+'</tbody>';
+
+  let ph='<thead><tr><th>Fecha</th><th>Primaria</th><th>Bloque</th><th>Tipo</th><th>Código SAP</th><th>Código interno</th><th>Actividad</th><th>Unidades</th><th>Ops</th></tr></thead><tbody>';
+  schedule.forEach(d=>{d.entries.forEach(e=>{ph+=`<tr><td>${d.date}</td><td>${d.primary||'-'}</td><td>${e.block}</td><td>${e.type}</td><td>${sapCodeForEntry(e)||''}</td><td>${internalCodeForEntry(e)||''}</td><td>${e.label}</td><td>${fmt(e.units,e.type==='fab'?0:1)}</td><td>${e.ops}</td></tr>`;});});
+  document.getElementById('progTable').innerHTML=ph+'</tbody>';
+
+  const invWrap=document.getElementById('invWrap');
+  if(invWrap){
+    const grouped=groupFinalStockMap(analytics.finalStock||{});
+    let iv='<div class="small" style="margin-bottom:8px">Resumen dinámico tabulado. El stock neto final es un cierre algebraico del programa: <b>stock inicial + producción / ingresos planificados - consumos - despachos ETD</b>. En kits terminados, el neto ya descuenta los pedidos parciales en sus fechas de entrega.</div>';
+    iv+='<div class="table-wrap" style="max-height:320px;margin-bottom:12px"><table><thead><tr><th>Fecha</th><th>Prod BF03</th><th>Prod BF01</th><th>Prod BF02</th><th>Prod MX1 5</th><th>Prod MX1 10</th><th>Desp BF03</th><th>Desp BF01</th><th>Desp BF02</th><th>Desp MX1 5</th><th>Desp MX1 10</th><th>Neto BF03</th><th>Neto BF01</th><th>Neto BF02</th><th>Neto MX1 5</th><th>Neto MX1 10</th><th>Neto MX2 5</th><th>Neto MX2 10</th></tr></thead><tbody>';
+    analytics.daily.forEach(d=>{iv+=`<tr><td>${d.date}</td><td>${fmt(d.produced.BF03,0)}</td><td>${fmt(d.produced.BF01,0)}</td><td>${fmt(d.produced.BF02,0)}</td><td>${fmt(d.produced.MX1_5,0)}</td><td>${fmt(d.produced.MX1_10,0)}</td><td>${fmt(d.dispatched.BF03,0)}</td><td>${fmt(d.dispatched.BF01,0)}</td><td>${fmt(d.dispatched.BF02,0)}</td><td>${fmt(d.dispatched.MX1_5,0)}</td><td>${fmt(d.dispatched.MX1_10,0)}</td><td>${fmt(d.netKits.BF03,0)}</td><td>${fmt(d.netKits.BF01,0)}</td><td>${fmt(d.netKits.BF02,0)}</td><td>${fmt(d.netKits.MX1_5,0)}</td><td>${fmt(d.netKits.MX1_10,0)}</td><td>${fmt(d.netKits.MX2_5,0)}</td><td>${fmt(d.netKits.MX2_10,0)}</td></tr>`;});
+    iv+='</tbody></table></div>';
+    iv+='<div class="table-wrap" style="max-height:220px;margin-bottom:12px"><table><thead><tr><th>Grupo</th><th>Ítems con saldo</th><th>Saldo agregado</th></tr></thead><tbody>';
+    Object.entries(grouped).forEach(([g,rows])=>{if(!rows.length)return; const total=rows.reduce((s,r)=>s+Number(r.value||0),0); iv+=`<tr><td><b>${stockGroupLabel(g)}</b></td><td>${rows.length}</td><td><b>${fmt(total,1)}</b></td></tr>`;});
+    iv+='</tbody></table></div>';
+    Object.entries(grouped).forEach(([g,rows])=>{if(!rows.length)return; iv+=`<div class="small" style="margin:10px 0 6px;color:#9fb0da">${stockGroupLabel(g)}</div>`; iv+='<div class="table-wrap" style="max-height:220px;margin-bottom:10px"><table><thead><tr><th>Ítem</th><th>Stock neto final</th></tr></thead><tbody>'; rows.forEach(r=>{iv+=`<tr><td>${r.label}</td><td>${fmt(r.value,1)}</td></tr>`;}); iv+='</tbody></table></div>';});
+    invWrap.innerHTML=iv;
+  }
+
+  renderStockFinalView(analytics);renderActuals();renderKPICharts();renderGantt();
+}
+
+function stockMetaOrder(key){
+  const idx=(STOCK_META||[]).findIndex(m=>m.key===key);
+  return idx<0?9999:idx;
+}
+function getLastDispatchDate(analytics){
+  let out='';
+  (analytics.daily||[]).forEach(d=>{const total=Object.values(d.dispatched||{}).reduce((s,v)=>s+Number(v||0),0); if(total>0) out=d.date;});
+  return out;
+}
+function getLastMovementDate(analytics){
+  let out='';
+  const keys=((STOCK_META||[]).map(m=>m.key));
+  let prev=copyObj((lastResult&&lastResult.initialStock)||{});
+  (analytics.daily||[]).forEach(d=>{
+    const changed=keys.some(k=>Math.abs(Number((prev||{})[k]||0)-Number((d.stock||{})[k]||0))>1e-9);
+    if(changed) out=d.date;
+    prev=copyObj(d.stock||{});
+  });
+  return out;
+}
+function getStockSnapshotByDate(analytics,date){
+  return ((analytics.daily||[]).find(d=>d.date===date)||{}).stock||{};
+}
+function getRelevantStockKeys(analytics){
+  const keys=((STOCK_META||[]).filter(m=>m.used).map(m=>m.key));
+  return keys.filter(k=>{
+    const init=Number(((lastResult&&lastResult.initialStock)||{})[k]||0);
+    const fin=Number(((analytics&&analytics.finalStock)||{})[k]||0);
+    if(Math.abs(init)>1e-9||Math.abs(fin)>1e-9) return true;
+    let prev=init;
+    for(const d of (analytics.daily||[])){
+      const cur=Number((d.stock||{})[k]||0);
+      if(Math.abs(cur-prev)>1e-9) return true;
+      prev=cur;
+    }
+    return false;
+  }).sort((a,b)=>{
+    const ga=stockGroupKey(a), gb=stockGroupKey(b);
+    if(ga!==gb) return stockGroupLabel(ga).localeCompare(stockGroupLabel(gb));
+    return stockMetaOrder(a)-stockMetaOrder(b);
+  });
+}
+function getCongruenceDiff(a,b){
+  const keys=new Set([...(STOCK_META||[]).map(m=>m.key),...Object.keys(a||{}),...Object.keys(b||{})]);
+  return [...keys].map(k=>({key:k,label:stockLabel(k),a:Number((a||{})[k]||0),b:Number((b||{})[k]||0),delta:Number((a||{})[k]||0)-Number((b||{})[k]||0)})).filter(r=>Math.abs(r.delta)>1e-9);
+}
+
+function getStockMetaByKey(key){
+  return (STOCK_META||[]).find(m=>m.key===key)||{key,label:stockLabel(key),sap:''};
+}
+function getResinConsolidatedRows(stock){
+  const defs=[
+    {family:'BF01',detailLabel:'BF01',pool:'res_bf01',labeled:'res_bf01_labeled',advanced:'res_condoneada_bf01',advancedLabel:'Condoneada'},
+    {family:'BF02',detailLabel:'BF02',pool:'res_bf02',labeled:'res_bf02_labeled',advanced:'res_condoneada_bf02',advancedLabel:'Condoneada'},
+    {family:'BF03',detailLabel:'BF03',pool:'res_bf03',labeled:'res_bf03_labeled',advanced:'res_bf03_revisada',advancedLabel:'Revisada'},
+    {family:'WUR',detailLabel:'Wurth BF01',pool:'',labeled:'res_wur',advanced:'res_condoneada_wur',advancedLabel:'Condoneada'}
+  ];
+  return defs.map(d=>{
+    const poolMeta=d.pool?getStockMetaByKey(d.pool):{sap:'',label:''};
+    const labMeta=d.labeled?getStockMetaByKey(d.labeled):{sap:'',label:''};
+    const advMeta=d.advanced?getStockMetaByKey(d.advanced):{sap:'',label:''};
+    const poolQty=Number((stock||{})[d.pool]||0);
+    const labeledQty=Number((stock||{})[d.labeled]||0);
+    const advancedQty=Number((stock||{})[d.advanced]||0);
+    return {
+      family:d.family,
+      detailLabel:d.detailLabel,
+      poolKey:d.pool||'',
+      poolSap:poolMeta.sap||'',
+      poolQty,
+      labeledKey:d.labeled||'',
+      labeledSap:labMeta.sap||'',
+      labeledQty,
+      advancedKey:d.advanced||'',
+      advancedSap:advMeta.sap||'',
+      advancedQty,
+      advancedLabel:d.advancedLabel,
+      totalQty:poolQty+labeledQty+advancedQty
+    };
+  });
+}
+function getStockFinalSapRows(analytics){
+  const finalStock=copyObj((analytics&&analytics.finalStock)||{});
+  const dispatchDate=getLastDispatchDate(analytics);
+  const cutoffStock=dispatchDate?copyObj(getStockSnapshotByDate(analytics,dispatchDate)):copyObj(finalStock);
+  return getRelevantStockKeys(analytics).map(k=>{
+    const meta=getStockMetaByKey(k);
+    const initial=Number(((lastResult&&lastResult.initialStock)||{})[k]||0);
+    const cutoff=Number((cutoffStock||{})[k]||0);
+    const final=Number((finalStock||{})[k]||0);
+    return {
+      group:stockGroupKey(k),
+      key:k,
+      label:meta.label||stockLabel(k),
+      sap:meta.sap||'',
+      initial,
+      cutoff,
+      final,
+      delta:final-initial
+    };
+  });
+}
+function renderConsolidatedResinHTML(stock){
+  const rows=getResinConsolidatedRows(stock);
+  let h='<div class="small" style="margin:10px 0 6px;color:#9fb0da">Consolidado de resinas remanentes por estado</div>';
+  h+='<div class="table-wrap" style="max-height:260px;margin-bottom:12px"><table><thead><tr><th>Familia</th><th>SAP pool</th><th>Disponible para etiquetar</th><th>SAP resina etiquetada</th><th>Resina ya etiquetada</th><th>Estado avanzado</th><th>SAP estado avanzado</th><th>Cantidad estado avanzado</th><th>Total consolidado</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    if(!r.poolQty&&!r.labeledQty&&!r.advancedQty)return;
+    h+=`<tr><td><b>${r.detailLabel}</b></td><td class="sap">${r.poolSap||''}</td><td>${fmt(r.poolQty,1)}</td><td class="sap">${r.labeledSap||''}</td><td>${fmt(r.labeledQty,1)}</td><td>${r.advancedLabel}</td><td class="sap">${r.advancedSap||''}</td><td>${fmt(r.advancedQty,1)}</td><td><b>${fmt(r.totalQty,1)}</b></td></tr>`;
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+function renderStockFinalSAPHTML(analytics){
+  const rows=getStockFinalSapRows(analytics);
+  let h='<div class="small" style="margin:10px 0 6px;color:#9fb0da">Detalle exportable de stock final con código SAP</div>';
+  h+='<div class="table-wrap" style="max-height:340px;margin-bottom:12px"><table><thead><tr><th>Grupo</th><th>Código SAP</th><th>Código interno</th><th>Ítem</th><th>Inicial</th><th>Al último despacho</th><th>Cierre horizonte</th><th>Variación neta</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    h+=`<tr><td>${stockGroupLabel(r.group)}</td><td class="sap">${r.sap||''}</td><td class="sap">${r.key}</td><td>${r.label}</td><td>${fmt(r.initial,1)}</td><td>${fmt(r.cutoff,1)}</td><td><b>${fmt(r.final,1)}</b></td><td>${fmt(r.delta,1)}</td></tr>`;
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+function exportStockFinalSAPCSV(){
+  if(!lastResult||!lastResult.analytics){setStatus('Ejecuta el escenario antes de exportar el stock final SAP.');return;}
+  const analytics=lastResult.analytics;
+  const cons=getResinConsolidatedRows((analytics&&analytics.finalStock)||{});
+  const rows=getStockFinalSapRows(analytics);
+  const lines=[];
+  lines.push(['REPORTE STOCK FINAL CONSOLIDADO',''].join(';'));
+  lines.push(['Familia','SAP pool','Disponible para etiquetar','SAP resina etiquetada','Resina ya etiquetada','Estado avanzado','SAP estado avanzado','Cantidad estado avanzado','Total consolidado'].join(';'));
+  cons.forEach(r=>{
+    if(!r.poolQty&&!r.labeledQty&&!r.advancedQty)return;
+    lines.push([r.detailLabel,r.poolSap||'',fmt(r.poolQty,1),r.labeledSap||'',fmt(r.labeledQty,1),r.advancedLabel,r.advancedSap||'',fmt(r.advancedQty,1),fmt(r.totalQty,1)].join(';'));
+  });
+  lines.push('');
+  lines.push(['DETALLE STOCK FINAL SAP',''].join(';'));
+  lines.push(['Grupo','Código SAP','Código interno','Ítem','Inicial','Al último despacho','Cierre horizonte','Variación neta'].join(';'));
+  rows.forEach(r=>{
+    lines.push([stockGroupLabel(r.group),r.sap||'',r.key,r.label,fmt(r.initial,1),fmt(r.cutoff,1),fmt(r.final,1),fmt(r.delta,1)].join(';'));
+  });
+  const csv='\ufeff'+lines.join('\n');
+  saveFileAs(new Blob([csv],{type:'text/csv;charset=utf-8;'}),'Stock_Final_Consolidado_SAP.csv','Reporte stock final SAP');
+}
+function renderStockFinalView(analytics){
+  const wrap=document.getElementById('stockFinalWrap');
+  if(!wrap||!lastResult)return;
+  const finalStock=copyObj((analytics&&analytics.finalStock)||{});
+  const dispatchDate=getLastDispatchDate(analytics);
+  const movementDate=getLastMovementDate(analytics)||((analytics.daily||[]).length?(analytics.daily[analytics.daily.length-1].date):'');
+  const cutoffStock=dispatchDate?copyObj(getStockSnapshotByDate(analytics,dispatchDate)):copyObj(finalStock);
+  const scheduleFinal=copyObj((((lastResult.schedule||[]).slice(-1)[0])||{}).stock||{});
+  const diff=getCongruenceDiff(scheduleFinal,finalStock);
+  const keys=getRelevantStockKeys(analytics);
+  const groupTotals={kits:0,resinas_flexsol:0,componentes_durafast:0,semi_elaborados:0,envases_y_empaque:0,otros:0};
+  keys.forEach(k=>{groupTotals[stockGroupKey(k)]=(groupTotals[stockGroupKey(k)]||0)+Number(finalStock[k]||0);});
+  const totalFinalKits=Object.values(KIT_STOCK_MAP).reduce((s,sk)=>s+Number(finalStock[sk]||0),0);
+  let h='<div class="small" style="margin-bottom:10px">Esta pestaña muestra el cierre consistente del escenario usando la misma lógica de simulación del plan: <b>stock inicial + ingresos planificados - consumos internos - despachos ETD</b>. Se corrigió el descuento de tareas transformacionales como condoneado, revisión y limpieza de brochas, para que el saldo final no quede inflado respecto de la simulación real.</div>';
+  h+='<div class="cards" style="grid-template-columns:repeat(4,1fr);margin-bottom:12px">';
+  h+=`<div class="card"><div class="k">Último despacho</div><div class="v" style="font-size:22px">${dispatchDate||'-'}</div><div class="s">Última fecha con pedidos ETD descontados</div></div>`;
+  h+=`<div class="card"><div class="k">Último movimiento</div><div class="v" style="font-size:22px">${movementDate||'-'}</div><div class="s">Desde esa fecha el stock queda congelado</div></div>`;
+  h+=`<div class="card"><div class="k">Kits netos finales</div><div class="v" style="font-size:22px">${fmt(totalFinalKits,0)}</div><div class="s">Saldo final después de despachos</div></div>`;
+  h+=`<div class="card"><div class="k">Ítems con saldo</div><div class="v" style="font-size:22px">${keys.filter(k=>Math.abs(Number(finalStock[k]||0))>1e-9).length}</div><div class="s">Claves con inventario no cero al cierre</div></div>`;
+  h+='</div>';
+  h+='<div class="btns" style="margin-bottom:12px"><button class="btn-accent" onclick="exportStockFinalSAPCSV()">📥 Exportar Stock final SAP (CSV)</button></div>';
+  h+=renderConsolidatedResinHTML(finalStock);
+  h+=renderStockFinalSAPHTML(analytics);
+
+  h+='<div class="table-wrap" style="max-height:220px;margin-bottom:12px"><table><thead><tr><th>Grupo</th><th>Saldo final agregado</th><th>Ítems con saldo</th></tr></thead><tbody>';
+  ['kits','resinas_flexsol','componentes_durafast','semi_elaborados','envases_y_empaque','otros'].forEach(g=>{
+    const count=keys.filter(k=>stockGroupKey(k)===g&&Math.abs(Number(finalStock[k]||0))>1e-9).length;
+    h+=`<tr><td>${stockGroupLabel(g)}</td><td><b>${fmt(groupTotals[g]||0,1)}</b></td><td>${count}</td></tr>`;
+  });
+  h+='</tbody></table></div>';
+
+  if(diff.length===0){
+    h+='<div class="status" style="background:rgba(69,212,131,.08);color:#c8f7da;border-color:rgba(69,212,131,.35);margin-bottom:12px">✅ Control de congruencia: el stock reconstruido en esta pestaña coincide con el cierre del plan.</div>';
+  }else{
+    h+='<div class="status" style="background:rgba(255,107,107,.08);color:#ffd0d0;border-color:rgba(255,107,107,.35);margin-bottom:10px">⚠️ Control de congruencia: se detectaron diferencias entre el cierre reconstruido y el snapshot del plan. Revisa la tabla siguiente.</div>';
+    h+='<div class="table-wrap" style="max-height:200px;margin-bottom:12px"><table><thead><tr><th>Ítem</th><th>Snapshot plan</th><th>Stock final reconstruido</th><th>Diferencia</th></tr></thead><tbody>';
+    diff.forEach(r=>{h+=`<tr><td>${r.label}</td><td>${fmt(r.a,1)}</td><td>${fmt(r.b,1)}</td><td><b>${fmt(r.delta,1)}</b></td></tr>`;});
+    h+='</tbody></table></div>';
+  }
+
+  h+='<div class="small" style="margin:10px 0 6px;color:#9fb0da">Corte final detallado por ítem</div>';
+  h+='<div class="table-wrap" style="max-height:340px;margin-bottom:12px"><table><thead><tr><th>Grupo</th><th>Ítem</th><th>Inicial</th><th>Al último despacho</th><th>Cierre horizonte</th><th>Variación neta</th></tr></thead><tbody>';
+  keys.forEach(k=>{
+    const ini=Number((lastResult.initialStock||{})[k]||0);
+    const cut=Number((cutoffStock||{})[k]||0);
+    const fin=Number((finalStock||{})[k]||0);
+    h+=`<tr><td>${stockGroupLabel(stockGroupKey(k))}</td><td>${stockLabel(k)}</td><td>${fmt(ini,1)}</td><td>${fmt(cut,1)}</td><td><b>${fmt(fin,1)}</b></td><td>${fmt(fin-ini,1)}</td></tr>`;
+  });
+  h+='</tbody></table></div>';
+
+  h+='<div class="small" style="margin:10px 0 6px;color:#9fb0da">Serie diaria de cierre por ítem relevante</div>';
+  h+='<div class="table-wrap" style="max-height:360px"><table><thead><tr><th>Fecha</th>';
+  keys.forEach(k=>{h+=`<th>${stockLabel(k)}</th>`;});
+  h+='</tr></thead><tbody>';
+  (analytics.daily||[]).forEach(d=>{
+    h+=`<tr><td>${d.date}</td>`;
+    keys.forEach(k=>{h+=`<td>${fmt(Number((d.stock||{})[k]||0),1)}</td>`;});
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+
+  wrap.innerHTML=h;
+}
+
+// ═══════════════════════════════════════════════════
+// ACTUALS (Real vs Plan)
+// ═══════════════════════════════════════════════════
+function renderActuals(){
+  const tbl=document.getElementById('actualsTable');const kpiTbl=document.getElementById('kpiTable');
+  if(!tbl||!lastResult)return;
+
+  // Build flat list of ALL planned activities per day (merged by date+id)
+  const daily=[];
+  lastResult.schedule.forEach(day=>{
+    const map={};
+    (day.entries||[]).forEach(e=>{
+      const id=e.id||e.label;
+      if(!map[id])map[id]={date:day.date,id,label:e.label,type:e.type,planned:0};
+      map[id].planned+=Number(e.units||0);
+    });
+    Object.values(map).forEach(v=>daily.push(v));
+  });
+
+  const timeEnabled=t=>['fab','env_res'].includes(t);
+  let h='<thead><tr><th>Fecha</th><th>Actividad</th><th>Tipo</th><th>Plan día</th><th>Real día</th><th>Inicio</th><th>Término</th><th>Comentario</th></tr></thead><tbody>';
+  for(const row of daily){
+    const key=row.date+'|'+row.id;
+    const saved=(sharedActuals[key])||{};
+    const te=timeEnabled(row.type);
+    h+=`<tr>
+      <td>${row.date}</td>
+      <td>${row.label}</td>
+      <td style="font-size:11px;color:var(--muted)">${row.type}</td>
+      <td style="text-align:right">${fmt(row.planned,1)}</td>
+      <td><input class="actual-real" data-key="${key}" data-field="qty" type="number" min="0" value="${saved.qty??''}" onchange="updateActualByKey(this)"></td>
+      <td><input class="time-real" data-key="${key}" data-field="start" type="time" value="${saved.start??''}" ${te?'':'disabled'} onchange="updateActualByKey(this)"></td>
+      <td><input class="time-real" data-key="${key}" data-field="end" type="time" value="${saved.end??''}" ${te?'':'disabled'} onchange="updateActualByKey(this)"></td>
+      <td><input class="comment-real" data-key="${key}" data-field="comment" type="text" value="${(saved.comment||'').replace(/"/g,'&quot;')}" onchange="updateActualByKey(this)"></td>
+    </tr>`;
+  }
+  tbl.innerHTML=h+'</tbody>';
+
+  // KPI table — aggregate by type
+  const planByType={fab:0,env_res:0,semi:0,kit:0};
+  const realByType={fab:0,env_res:0,semi:0,kit:0};
+  const planByFam={},realByFam={};
+  for(const row of daily){
+    planByType[row.type]=(planByType[row.type]||0)+row.planned;
+    const key=row.date+'|'+row.id;const sv=sharedActuals[key]||{};
+    realByType[row.type]=(realByType[row.type]||0)+Number(sv.qty||0);
+    if(row.type==='kit'){
+      const fam=row.id.replace('KIT_','');
+      planByFam[fam]=(planByFam[fam]||0)+row.planned;
+      realByFam[fam]=(realByFam[fam]||0)+Number(sv.qty||0);
+    }
+  }
+  const totalPlan=daily.reduce((a,b)=>a+b.planned,0);
+  const totalReal=Object.values(sharedActuals).reduce((a,v)=>a+Number(v.qty||0),0);
+  const kitPlan=planByType.kit||0;
+  const kitReal=realByType.kit||0;
+  const daysWithReal=new Set(Object.keys(sharedActuals).filter(k=>Number((sharedActuals[k]||{}).qty||0)>0).map(k=>k.split('|')[0])).size;
+
+  let k='<thead><tr><th>KPI</th><th>Valor</th><th>Detalle</th></tr></thead><tbody>';
+  k+=`<tr><td>Plan total actividades</td><td><b>${fmt(totalPlan,1)}</b></td><td>Fab+Env+Semi+Kit</td></tr>`;
+  k+=`<tr><td>Real total actividades</td><td><b>${fmt(totalReal,1)}</b></td><td>Suma de todo lo registrado</td></tr>`;
+  k+=`<tr><td>Adherencia actividades</td><td><b>${totalPlan>0?(100*totalReal/totalPlan).toFixed(1)+'%':'0%'}</b></td><td>Real/Plan agregado</td></tr>`;
+  k+=`<tr><td>Plan kits armados</td><td><b>${fmt(kitPlan,1)}</b></td><td>Solo actividades tipo kit</td></tr>`;
+  k+=`<tr><td>Real kits armados</td><td><b>${fmt(kitReal,1)}</b></td><td>Solo actividades tipo kit</td></tr>`;
+  k+=`<tr><td>Adherencia kits</td><td><b>${kitPlan>0?(100*kitReal/kitPlan).toFixed(1)+'%':'0%'}</b></td><td>Real/Plan kits</td></tr>`;
+  k+=`<tr><td>Días con registro</td><td><b>${daysWithReal}</b></td><td>Días con al menos 1 actividad registrada</td></tr>`;
+  Object.keys(planByFam).forEach(f=>{const pl=planByFam[f]||0;const rl=realByFam[f]||0;
+  k+=`<tr><td>Kit ${f}</td><td><b>${pl>0?(100*rl/pl).toFixed(1)+'%':'0%'}</b></td><td>Plan:${fmt(pl,1)} Real:${fmt(rl,1)}</td></tr>`;});
+  ['fab','env_res','semi'].forEach(t=>{const pl=planByType[t]||0;const rl=realByType[t]||0;
+  k+=`<tr><td>Adherencia ${t}</td><td><b>${pl>0?(100*rl/pl).toFixed(1)+'%':'0%'}</b></td><td>Plan:${fmt(pl,1)} Real:${fmt(rl,1)}</td></tr>`;});
+  kpiTbl.innerHTML=k+'</tbody>';
+
+  const regCount=Object.keys(sharedActuals).filter(k=>sharedActuals[k]&&(sharedActuals[k].qty||sharedActuals[k].comment)).length;
+  document.getElementById('actualsInfo').textContent=`${regCount} registros de actividades guardados. ${daysWithReal} días con producción real.`;
+}
+function updateActualByKey(el){
+  const key=el.dataset.key,field=el.dataset.field;
+  if(!sharedActuals[key])sharedActuals[key]={};
+  sharedActuals[key][field]=field==='comment'||field==='start'||field==='end'?el.value:(Number(el.value)||0);
+}
+function updateActual(el){updateActualByKey(el);}
+
+// ═══════════════════════════════════════════════════
+// KPI CHARTS TAB
+// ═══════════════════════════════════════════════════
+function renderKPICharts(){
+  const el=document.getElementById('kpiChartsBody');if(!el||!lastResult)return;
+  const fams=['BF03','BF01','BF02','WUR','MX1_5','MX1_10','MX2_5','MX2_10'].filter(f=>(lastResult.goals[f]||0)>0);
+  const colors={BF03:'#e87722',BF01:'#8a8d90',BF02:'#5ba3cf',WUR:'#9c27b0',MX1_5:'#8a8d90',MX1_10:'#8a8d90',MX2_5:'#5ba3cf',MX2_10:'#5ba3cf'};
+  const dates=lastResult.progress.map(x=>x.date);
+
+  // Adherence bars
+  let adherH='<div class="kpi-row">';
+  fams.forEach(f=>{
+    const plan=(lastResult.displayKits&&lastResult.displayKits[f])||lastResult.kits[f]||0;
+    let real=0;Object.keys(sharedActuals).forEach(k=>{if(k.includes('KIT_'+f)){real+=Number((sharedActuals[k]||{}).qty||0);}});
+    const goal=lastResult.goals[f]||0;
+    const planPct=goal>0?Math.min(100,Math.round(plan/goal*100)):0;
+    const realPct=goal>0?Math.min(100,Math.round(real/goal*100)):0;
+    const col=colors[f]||'#6ea8fe';
+    adherH+=`<div class="kpi-box">
+      <div class="title">${FAMILIES[f].label} — Objetivo: ${fmt(goal)}</div>
+      <div style="display:flex;gap:20px;align-items:center">
+        <div style="flex:1">
+          <div style="font-size:12px;color:var(--muted)">Plan</div>
+          <div style="font-size:24px;font-weight:800;color:${col}">${fmt(plan,0)}</div>
+          <div class="prog-bar"><div class="prog-fill" style="width:${planPct}%;background:${col}"></div></div>
+          <div class="small">${planPct}% del objetivo</div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:12px;color:var(--muted)">Real</div>
+          <div style="font-size:24px;font-weight:800;color:${real>0?'#45d483':'var(--muted)'}">${fmt(real)}</div>
+          <div class="prog-bar"><div class="prog-fill" style="width:${realPct}%;background:${realPct>=planPct*0.9?'#45d483':'#ff6b6b'}"></div></div>
+          <div class="small">${realPct}% del objetivo</div>
+        </div>
+      </div>
+    </div>`;
+  });
+  adherH+='</div>';
+
+  // Daily trend chart
+  let trendH='<div class="kpi-box" style="margin-top:12px"><div class="title">Tendencia diaria de kits planificados (acumulado)</div>';
+  const totalGoal=Object.values(lastResult.goals).reduce((a,b)=>a+b,0);
+  const maxVal=Math.max(1,...lastResult.progress.map(p=>p.BF03+p.BF01+p.BF02+(p.WUR||0)+p.MX1_5+p.MX1_10+p.MX2_5+p.MX2_10));
+  trendH+='<div class="trend-row">';
+  lastResult.progress.forEach((p,i)=>{
+    const t=p.BF03+p.BF01+p.BF02+(p.WUR||0)+p.MX1_5+p.MX1_10+p.MX2_5+p.MX2_10;
+    if(t===0)return;
+    const h=Math.max(2,Math.round(t/maxVal*50));
+    const pct=totalGoal>0?Math.round(t/totalGoal*100):0;
+    trendH+=`<div class="trend-bar" style="height:${h}px;background:linear-gradient(180deg,#6ea8fe,#45d483)" title="${p.date}: ${fmt(t)} (${pct}%)"></div>`;
+  });
+  trendH+='</div><div class="small" style="margin-top:4px">Cada barra = 1 día · Hover para ver detalle</div></div>';
+
+  // Real vs Plan comparison
+  let compH='<div class="kpi-box" style="margin-top:12px"><div class="title">Comparativa Plan vs Real por familia</div>';
+  compH+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">';
+  fams.forEach(f=>{
+    const plan=(lastResult.displayKits&&lastResult.displayKits[f])||lastResult.kits[f]||0;let real=0;Object.keys(sharedActuals).forEach(k=>{if(k.includes('KIT_'+f)){real+=Number((sharedActuals[k]||{}).qty||0);}});
+    const maxBar=Math.max(plan,real,1);const col=colors[f];
+    compH+=`<div style="text-align:center;min-width:60px">
+      <div style="display:flex;gap:3px;align-items:end;height:60px;justify-content:center">
+        <div style="width:12px;height:${Math.max(2,Math.round(plan/maxBar*55))}px;background:${col};border-radius:2px 2px 0 0" title="Plan:${fmt(plan,0)}"></div>
+        <div style="width:12px;height:${Math.max(2,Math.round(real/maxBar*55))}px;background:#45d483;border-radius:2px 2px 0 0" title="Real:${fmt(real)}"></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">${FAMILIES[f].label}</div>
+    </div>`;
+  });
+  compH+='</div><div class="small" style="margin-top:6px"><span style="color:#6ea8fe">■</span> Plan <span style="color:#45d483">■</span> Real</div></div>';
+
+  el.innerHTML=adherH+trendH+compH;
+}
+
+// ═══════════════════════════════════════════════════
+// EXPORTS
+// ═══════════════════════════════════════════════════
+function downloadCSV(filename,rows){const csv=rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');saveFileAs(new Blob([csv],{type:'text/csv;charset=utf-8;'}),filename,'CSV');}
+function exportCSV(){if(!lastResult)return;const rows=[['Fecha','Primaria','Bloque','Tipo','Código SAP','Código interno','Actividad','Unidades','Ops nominales','Ops efectivos bloque','Post-limpieza','Limpieza origen','Ops serial','Min serial','Unid serial']];lastResult.schedule.forEach(d=>d.entries.forEach(e=>{const eff=(e.opsEffectiveByBlock&&e.opsEffectiveByBlock[e.block])||'';rows.push([d.date,d.primary||'',e.block,e.type,sapCodeForEntry(e)||'',internalCodeForEntry(e)||'',e.label,String(e.units).replace('.',','),e.ops,String(eff).replace('.',','),e.isPostClean?'SI':'',e.serial_cleaning_label||'',e.serial_ops_used||'',e.serial_minutes_used||'',e.serial_units||'']);}));downloadCSV('programacion_mps_detallada_con_SAP.csv',rows);setStatus('CSV exportado con códigos SAP y ops efectivos por bloque.');}
+function exportActualsCSV(){const rows=[['Clave (Fecha|Actividad)','Cantidad real','Inicio','Término','Comentario']];Object.entries(sharedActuals).sort(([a],[b])=>a.localeCompare(b)).forEach(([k,v])=>{rows.push([k,v.qty||'',v.start||'',v.end||'',v.comment||'']);});downloadCSV('reales_mps_v17.csv',rows);}
+
+function exportSnapshotCSV(){
+  if(!lastResult){setStatus('Ejecuta el escenario primero.');return;}
+  const {goals,progress,kits,displayKits}=lastResult;
+  const rows=[['Fecha','Plan_BF03','Plan_BF01','Plan_BF02','Plan_MX1_5','Plan_MX1_10','Plan_MX2_5','Plan_MX2_10','Init_BF03','Init_BF01','Init_BF02','Init_MX1_5','Init_MX1_10','Init_MX2_5','Init_MX2_10','Total_BF03','Total_BF01','Total_BF02','Total_MX1_5','Total_MX1_10','Total_MX2_5','Total_MX2_10','Real_BF03','Real_BF01','Real_BF02','Real_MX1_5','Real_MX1_10','Real_MX2_5','Real_MX2_10']];
+  const init={BF03:initialKitQty('BF03'),BF01:initialKitQty('BF01'),BF02:initialKitQty('BF02'),WUR:initialKitQty('WUR'),MX1_5:initialKitQty('MX1_5'),MX1_10:initialKitQty('MX1_10'),MX2_5:initialKitQty('MX2_5'),MX2_10:initialKitQty('MX2_10')};
+  progress.forEach(p=>{
+    const real=sharedActuals[p.date]||{};
+    rows.push([p.date,p.BF03||0,p.BF01||0,p.BF02||0,p.MX1_5||0,p.MX1_10||0,p.MX2_5||0,p.MX2_10||0,
+      init.BF03,init.BF01,init.BF02,init.MX1_5,init.MX1_10,init.MX2_5,init.MX2_10,
+      (p.BF03||0)+init.BF03,(p.BF01||0)+init.BF01,(p.BF02||0)+init.BF02,(p.MX1_5||0)+init.MX1_5,(p.MX1_10||0)+init.MX1_10,(p.MX2_5||0)+init.MX2_5,(p.MX2_10||0)+init.MX2_10,
+      real.BF03||0,real.BF01||0,real.BF02||0,real.MX1_5||0,real.MX1_10||0,real.MX2_5||0,real.MX2_10||0]);
+  });
+  const csv=rows.map(r=>r.join(';')).join('\n');
+  const a=document.createElement('a');
+  saveFileAs(new Blob([csv],{type:'text/csv;charset=utf-8;'}),'snapshot_plan_real.csv','Plan vs Real');
+}
+
+
+// ═══════════════════════════════════════════════════
+// SAP TXT LOADER & STOCK GRID
+// ═══════════════════════════════════════════════════
+function buildStockGrid(){
+  const grid=document.getElementById('stockGrid');if(!grid)return;
+  let h='';STOCK_META.filter(m=>m.used).forEach(m=>{
+    const sapNote = SAP_COMPOUND_MAP[m.key] ? ('SAP compuesto: ' + SAP_COMPOUND_MAP[m.key].join(' + ')) : (m.sap ? ('SAP: ' + m.sap) : 'Carga manual / stock inicial');
+    h+=`<div><label>${m.label}<span class="sap-note">${sapNote}</span></label><input id="s_${m.key}" type="number" placeholder="0"></div>`;
+  });
+  grid.innerHTML=h;
+}
+function numFromSap(v){return Number(String(v||'').replace(/,/g,'').replace(/\s+/g,''))||0}
+function decodeSapBuffer(buf){
+  const tries=['utf-16','utf-8','iso-8859-1','windows-1252'];
+  for(const enc of tries){
+    try{
+      const txt=new TextDecoder(enc).decode(buf);
+      if(txt && txt.replace(/\u0000/g,'').trim().length>0) return txt;
+    }catch(err){}
+  }
+  return '';
+}
+
+function loadSapTxt(){
+  const fi=document.getElementById('sapFile');
+  const info=document.getElementById('sapInfo');
+  const file=fi&&fi.files&&fi.files[0];
+  if(!file){setStatus('Selecciona el TXT de SAP primero.');return;}
+  const tryEnc=['utf-16le','utf-16','utf-8','windows-1252','iso-8859-1'];
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const buf=e.target.result;
+    let content='', usedEnc='';
+    for(const enc of tryEnc){
+      try{
+        content=new TextDecoder(enc).decode(buf);
+        if(content && /Número de artículo|Numero de articulo|Descripción del artículo|Descripcion del articulo|En stock/i.test(content)){usedEnc=enc;break;}
+      }catch(err){}
+    }
+    if(!content || !usedEnc){
+      stockLoadSummary={loaded:false,direct:0,compound:0,rows:0,source:'TXT no legible'};
+      updateEngineFlags('TXT no legible');
+      setStatus('No se pudo leer el TXT SAP o no contiene columnas esperadas.');
+      if(info) info.textContent='TXT no legible o sin columnas esperadas.';
+      return;
+    }
+    const lines=content.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    const dataRows=[];
+    const codeToStock={};
+    for(const line of lines){
+      const parts=line.split('\t');
+      if(parts.length<4) continue;
+      const code=(parts[1]||'').trim();
+      const desc=(parts[2]||'').trim();
+      const raw=(parts[3]||'').trim();
+      if(!code || /Número de artículo|Numero de articulo/i.test(code)) continue;
+      const normalized=(raw||'0').replace(/,/g,'');
+      const qty=Number(normalized)||0;
+      codeToStock[code]=qty;
+      dataRows.push({code,desc,qty});
+    }
+    let direct=0, compound=0;
+    const resinPoolKeys=['res_bf01','res_bf02','res_bf03'];
+    const resinLabeledToBase={res_bf01_labeled:'res_bf01',res_bf02_labeled:'res_bf02',res_bf03_labeled:'res_bf03'};
+    // first clear resin labeled visual stocks; for planning they are merged into base pool
+    Object.keys(resinLabeledToBase).forEach(k=>{ const el=document.getElementById('s_'+k); if(el) el.value='0'; });
+    for(const meta of STOCK_META){
+      const el=document.getElementById('s_'+meta.key);
+      if(!el) continue;
+      if(meta.sap){
+        if(Object.prototype.hasOwnProperty.call(codeToStock, meta.sap)){
+          if(resinLabeledToBase[meta.key]){
+            const baseKey=resinLabeledToBase[meta.key];
+            const baseEl=document.getElementById('s_'+baseKey);
+            if(baseEl){
+              baseEl.value=String((Number(baseEl.value||0)||0) + Number(codeToStock[meta.sap]||0));
+              direct++;
+            }
+          }else{
+            // if base resin, start from file value; if later labeled exists it will be added on top
+            el.value=String(codeToStock[meta.sap]);
+            direct++;
+          }
+        }
+      }else if(SAP_COMPOUND_MAP[meta.key]){
+        const sum=SAP_COMPOUND_MAP[meta.key].reduce((a,c)=>a+(Number(codeToStock[c]||0)),0);
+        el.value=String(sum);
+        compound++;
+      }
+    }
+    stockLoadSummary={loaded:true,direct:direct,compound:compound,rows:dataRows.length,source:'TXT SAP'};
+    updateEngineFlags();
+    if(info) info.textContent=`Leído ${dataRows.length} filas (${usedEnc}). Ítems directos: ${direct}. Compuestos: ${compound}.`;
+    setStatus(`TXT SAP cargado: ${dataRows.length} filas, ${direct} ítems directos y ${compound} compuestos. Resinas P/E de BF01/BF02/BF03 se sumaron al pool de resina para etiquetar.`);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ═══════════════════════════════════════════════════
+// GANTT CHART + EXCEL EXPORT (Corporate Colors)
+// ═══════════════════════════════════════════════════
+// Color map: activity ID → {bg (background), fg (text), xbg (Excel bg), label}
+const GCOL=(function(){
+  const O={bg:'rgba(232,119,34,.10)',fg:'#e87722',xbg:'#f9e1cf'};
+  const G={bg:'rgba(138,141,144,.12)',fg:'#8a8d90',xbg:'#e3e4e6'};
+  const C={bg:'rgba(91,163,207,.12)',fg:'#5ba3cf',xbg:'#d9ecf7'};
+  const SV={bg:'rgba(232,119,34,.10)',fg:'#e87722',xbg:'#f9e1cf'};
+  const IG={bg:'rgba(76,175,80,.12)',fg:'#4caf50',xbg:'#dff0df'};
+  const FI={bg:'rgba(255,193,7,.14)',fg:'#d9a300',xbg:'#fff2c7'};
+  const CB={bg:'rgba(74,74,74,.14)',fg:'#4a4a4a',xbg:'#e1e1e1'};
+  return{
+    BF03:O,ENV_BF03:O,ETI_POTE_BF03:O,KIT_BF03:O,
+    BF01:G,ENV_BF01:G,ETI_POTE_BF01:G,ENV_CAT_0102:G,ETI_CAT_0102:G,KIT_BF01:G,
+    BF02:C,ENV_BF02:C,ETI_POTE_BF02:C,KIT_BF02:C,
+    MX1A:G,MX1B:G,ENV_MX1A:G,ENV_MX1B:G,KIT_MX1_5:G,KIT_MX1_10:G,ETI_BALDE5:G,ETI_BALDE10:G,
+    MX2A:C,MX2B:C,ENV_MX2A:C,ENV_MX2B:C,KIT_MX2_5:C,KIT_MX2_10:C,ETI_BALDE5_MX2:C,ETI_BALDE10_MX2:C,
+    ENV_SOLV:SV,ETI_SOLV_FLEX:SV,ETI_SOLV_DUR:SV,
+    ENV_IMP_GOMA:IG,ETI_IMP_GOMA:IG,
+    ENV_IMP_FA:FI,ETI_IMP_FA:FI,ENV_IMP_FB:FI,ETI_IMP_FB:FI,
+    CAT_BF03:CB
+  };
+})();
+function actColor(id,label='',type=''){
+  if(GCOL[id]) return GCOL[id];
+  if(type==='kit' && /BF03/.test(id)) return GCOL.KIT_BF03;
+  if(type==='kit' && /BF01/.test(id)) return GCOL.KIT_BF01;
+  if(type==='kit' && /BF02/.test(id)) return GCOL.KIT_BF02;
+  if(type==='kit' && /MX1_5|MX1_10/.test(id)) return GCOL.KIT_MX1_5;
+  if(type==='kit' && /MX2_5|MX2_10/.test(id)) return GCOL.KIT_MX2_5;
+  if(/SOLVENTE/.test(label)) return GCOL.ENV_SOLV;
+  if(/IMPRIMANTE GOMA/.test(label)) return GCOL.ENV_IMP_GOMA;
+  if(/FIERRO A|FIERRO B/.test(label)) return GCOL.ENV_IMP_FA;
+  if(/CATALIZADOR BF03/.test(label)) return GCOL.CAT_BF03;
+  return {bg:'rgba(150,150,160,.10)',fg:'#9aa3b2',xbg:'#eceff4'};
+}
+
+
+
+function renderGantt(){
+  const el=document.getElementById('ganttContainer');if(!el||!lastResult)return;
+  const sc=lastResult.schedule||[];
+  const wDays=sc;
+  if(!wDays.length){el.innerHTML='<div class="small" style="padding:12px">Ejecuta el escenario primero.</div>';return;}
+
+  const analytics=lastResult.analytics||getPlanAnalytics(lastResult,orders);
+  const dailyByDate={};analytics.daily.forEach(d=>{dailyByDate[d.date]=d;});
+  const actOrd={fab:0,env_res:1,semi:2,kit:3};
+  const allActs=[];const seen=new Set();
+  for(const d of wDays){for(const e of d.entries||[]){const id=e.id||e.label;if(!seen.has(id)){seen.add(id);allActs.push({id,label:e.label,type:e.type});}}}
+  allActs.sort((a,b)=>(actOrd[a.type]||9)-(actOrd[b.type]||9)||a.label.localeCompare(b.label));
+
+  const weekBreaks=new Set();let weekUnits={},weeklyUnits=[],weeklyStock=[];
+  for(let i=0;i<wDays.length;i++){
+    (wDays[i].entries||[]).forEach(e=>{const id=e.id||e.label;weekUnits[id]=(weekUnits[id]||0)+Number(e.units||0);});
+    const dow=new Date(wDays[i].date+'T12:00:00').getDay();
+    const nextDow=i+1<wDays.length?new Date(wDays[i+1].date+'T12:00:00').getDay():-1;
+    if(dow===6||nextDow===1||i===wDays.length-1){weekBreaks.add(i);weeklyUnits.push({...weekUnits});weeklyStock.push(copyObj((dailyByDate[wDays[i].date]&&dailyByDate[wDays[i].date].stock)||wDays[i].stock||{}));weekUnits={};}
+  }
+
+  const actToStockKey={};
+  allActs.forEach(a=>{
+    if(ACTS[a.id])actToStockKey[a.id]=ACTS[a.id].inv;
+    else if(a.type==='env_res'){const fk=a.id.replace('ENV_','');if(['BF01','BF02','BF03'].includes(fk))actToStockKey[a.id]='__resfamily__'+fk;else if(FABACTS[fk])actToStockKey[a.id]=FABACTS[fk].inv;}
+    else if(a.type==='fab')actToStockKey[a.id]='__fab__'+a.id;
+    else if(a.type==='kit')actToStockKey[a.id]='__kit__'+a.id.replace('KIT_','');
+  });
+
+  let h='<table class="gantt" id="ganttTable"><thead><tr><th class="corner">Actividad</th>';
+  let weekNum=0;
+  for(let i=0;i<wDays.length;i++){
+    h+=`<th colspan="3" style="border-bottom:none">${dayLabel(wDays[i].date)}</th>`;
+    if(weekBreaks.has(i)){weekNum++;h+=`<th style="background:#163022;color:#45d483;min-width:90px;font-size:10px;border-bottom:none">📊 Sem ${weekNum}</th>`;}
+  }
+  h+='</tr><tr><th class="corner"></th>';
+  for(let i=0;i<wDays.length;i++){h+='<th style="font-size:9px">B1</th><th style="font-size:9px">B2</th><th style="font-size:9px">B3</th>';if(weekBreaks.has(i))h+='<th style="background:#163022;color:#45d483;font-size:7px">SI|P|C|SF</th>';}
+  h+='</tr></thead><tbody>';
+
+  for(const act of allActs){
+    const col=actColor(act.id,act.label,act.type);
+    h+=`<tr><td class="act-name" style="border-left:3px solid ${col.fg}">${act.label}</td>`;
+    let wi=0;
+    for(let i=0;i<wDays.length;i++){
+      const d=wDays[i];
+      for(const bn of ['B1','B2','B3']){
+        const exact=(d.entries||[]).find(e=>(e.id||e.label)===act.id&&e.block===bn);
+        const b23=(bn!=='B1')?(d.entries||[]).find(e=>(e.id||e.label)===act.id&&e.block==='B2+B3'):null;
+        const entry=exact||b23;
+        if(entry){
+          const units=entry.units||0, ops=entry.ops||0;
+          const isB3cont=(bn==='B3'&&!exact&&b23);
+          if(isB3cont){h+=`<td class="gc" style="background:${col.bg};color:${col.fg};font-weight:700;line-height:1.1;opacity:.7"><div>O ${fmt(ops,0)}</div><div style="font-size:7px;color:#6b82aa">↕ cont.</div></td>`;continue;}
+          const uTxt=(entry.type==='kit'||entry.type==='fab'||entry.type==='env_res')?fmt(units,0):fmt(units,1);
+          const postNote=entry.isPostClean?`<div style="font-size:9px;color:#22c55e;font-weight:700;background:rgba(34,197,94,.12);padding:1px 3px;border-radius:3px;margin-top:1px">★ POST-LIMP · ${entry.serial_ops_used||entry.ops}op · ${entry.serial_minutes_used||Math.round((entry.postCleanHrs||0)*60)}min · ${fmt(entry.serial_units||entry.units, entry.type==='kit'||entry.type==='fab'||entry.type==='env_res'?0:1)}u</div><div style="font-size:8px;color:#9fe7b2">desde ${entry.serial_cleaning_label||'limpieza'}</div>`:'';
+          h+=`<td class="gc" style="background:${col.bg};color:${col.fg};font-weight:700;line-height:1.1"><div>O ${fmt(ops,0)}</div><div>U ${uTxt}</div>${postNote}</td>`;
+        }else h+='<td class="gc empty"></td>';
+      }
+      if(weekBreaks.has(i)){
+        const wkU=weeklyUnits[wi][act.id]||0;
+        const sk=actToStockKey[act.id];
+        const si=sk?(wi===0?getStockGroupValue(scenarioInitialStock,sk):getStockGroupValue(weeklyStock[wi-1]||{},sk)):'';
+        const sf=sk?getStockGroupValue(weeklyStock[wi]||{},sk):'';
+        const cons=(sk!==''&&sk!==undefined&&si!==''&&sf!=='')?Math.max(0,Number(si||0)+Number(wkU||0)-Number(sf||0)):'';
+        const pTxt=wkU?((act.type==='kit'||act.type==='fab'||act.type==='env_res')?fmt(wkU,0):fmt(wkU,1)):'0';
+        h+=`<td class="gc" style="background:#163022;color:#bff5cf;min-width:96px;font-weight:700;line-height:1.1"><div>SI ${si!==''?fmt(si,0):''}</div><div>P ${pTxt}</div><div>C ${cons!==''?fmt(cons,0):''}</div><div>SF ${sf!==''?fmt(sf,0):''}</div></td>`;
+        wi++;
+      }
+    }
+    h+='</tr>';
+  }
+
+  const famRows=Object.keys(FAMILIES).filter(f=>(lastResult.goals[f]||0)>0 || analytics.daily.some(d=>Number(d.dispatched[f]||0)>0));
+  if(famRows.length){
+    for(const fam of famRows){
+      h+=`<tr><td class="act-name" style="border-left:3px solid #ef4444;color:#fca5a5">DESPACHO ${FAMILIES[fam].label}</td>`;
+      let wi=0;
+      for(let i=0;i<wDays.length;i++){
+        const dayAn=(dailyByDate[wDays[i].date]||{});
+        const q=Number((dayAn.dispatched&&dayAn.dispatched[fam])||0);
+        h+='<td class="gc empty"></td><td class="gc empty"></td>';
+        h+=q?`<td class="gc" style="background:rgba(239,68,68,.10);color:#ef4444;font-weight:700"><div>D ${fmt(q,0)}</div></td>`:'<td class="gc empty"></td>';
+        if(weekBreaks.has(i)){
+          const wd=analytics.weeklyDispatch[wi]||makeFamilyMap();
+          const sf=analytics.weeklyStock[wi]?Number(analytics.weeklyStock[wi][KIT_STOCK_MAP[fam]]||0):0;
+          const si=wi===0?Number((lastResult.initialStock||{})[KIT_STOCK_MAP[fam]]||0):Number((analytics.weeklyStock[wi-1]||{})[KIT_STOCK_MAP[fam]]||0);
+          h+=`<td class="gc" style="background:#301616;color:#fecaca;min-width:96px;font-weight:700;line-height:1.1"><div>SI ${fmt(si,0)}</div><div>D ${fmt(wd[fam]||0,0)}</div><div>SF ${fmt(sf,0)}</div></td>`;
+          wi++;
+        }
+      }
+      h+='</tr>';
+    }
+  }
+
+  h+='<tr class="g-total"><td class="act-name">TOTAL OPS</td>';
+  let wi=0;
+  for(let i=0;i<wDays.length;i++){
+    const d=wDays[i];
+    const b1=(d.ops&&d.ops.b1)||0,b2=(d.ops&&d.ops.b2)||0,b3=(d.ops&&d.ops.b3)||0;
+    h+=`<td class="gc ${b1>((d.opsLimit)||(lastResult.opsTotal||0))?'over':''}">${b1?('O '+fmt(b1,0)):''}</td>`;
+    h+=`<td class="gc ${b2>((d.opsLimit)||(lastResult.opsTotal||0))?'over':''}">${b2?('O '+fmt(b2,0)):''}</td>`;
+    h+=`<td class="gc ${b3>((d.opsLimit)||(lastResult.opsTotal||0))?'over':''}">${b3?('O '+fmt(b3,0)):''}</td>`;
+    if(weekBreaks.has(i)){
+      let weekOpsTotal=0;
+      const breaks=[...weekBreaks];
+      const start=wi===0?0:breaks[wi-1]+1;
+      const end=i;
+      for(let j=start;j<=end;j++)weekOpsTotal+=(wDays[j].ops?.b1||0)+(wDays[j].ops?.b2||0)+(wDays[j].ops?.b3||0);
+      h+=`<td class="gc" style="background:#163022;color:#bff5cf;font-weight:700;min-width:90px">O ${fmt(weekOpsTotal,0)}</td>`;wi++;
+    }
+  }
+  h+='</tr></tbody></table>';
+
+  let mh='<div style="margin-top:8px" class="table-wrap"><table><thead><tr><th>Fecha</th><th>Prod BF03</th><th>Prod BF01</th><th>Prod BF02</th><th>Prod MX1 5</th><th>Prod MX1 10</th><th>Desp BF03</th><th>Desp BF01</th><th>Desp BF02</th><th>Desp MX1 5</th><th>Desp MX1 10</th><th>Neto BF03</th><th>Neto BF01</th><th>Neto BF02</th><th>Neto MX1 5</th><th>Neto MX1 10</th><th>Neto MX2 5</th><th>Neto MX2 10</th></tr></thead><tbody>';
+  analytics.daily.forEach(d=>{mh+=`<tr><td>${d.date}</td><td>${fmt(d.produced.BF03,0)}</td><td>${fmt(d.produced.BF01,0)}</td><td>${fmt(d.produced.BF02,0)}</td><td>${fmt(d.produced.MX1_5,0)}</td><td>${fmt(d.produced.MX1_10,0)}</td><td>${fmt(d.dispatched.BF03,0)}</td><td>${fmt(d.dispatched.BF01,0)}</td><td>${fmt(d.dispatched.BF02,0)}</td><td>${fmt(d.dispatched.MX1_5,0)}</td><td>${fmt(d.dispatched.MX1_10,0)}</td><td>${fmt(d.netKits.BF03,0)}</td><td>${fmt(d.netKits.BF01,0)}</td><td>${fmt(d.netKits.BF02,0)}</td><td>${fmt(d.netKits.MX1_5,0)}</td><td>${fmt(d.netKits.MX1_10,0)}</td><td>${fmt(d.netKits.MX2_5,0)}</td><td>${fmt(d.netKits.MX2_10,0)}</td></tr>`;});
+  mh+='</tbody></table></div>';
+  el.innerHTML=h+mh;
+}
+
+function exportGanttExcel(){
+  if(!lastResult){setStatus('Ejecuta el escenario primero.');return;}
+  const sc=lastResult.schedule||[];
+  const wDays=sc;
+  const actOrd={fab:0,env_res:1,semi:2,kit:3};
+  const allActs=[];const seen=new Set();
+  for(const d of wDays){for(const e of d.entries||[]){const id=e.id||e.label;if(!seen.has(id)){seen.add(id);allActs.push({id,label:e.label,type:e.type});}}}
+  allActs.sort((a,b)=>(actOrd[a.type]||9)-(actOrd[b.type]||9)||a.label.localeCompare(b.label));
+
+  const weekBreaks=new Set();let weekUnits={},weekOps={};const weeklyUnits=[],weeklyOps=[],weeklyStock=[];
+  for(let i=0;i<wDays.length;i++){
+    (wDays[i].entries||[]).forEach(e=>{const id=e.id||e.label;weekUnits[id]=(weekUnits[id]||0)+Number(e.units||0);weekOps[id]=(weekOps[id]||0)+Number(e.ops||0);});
+    const dow=new Date(wDays[i].date+'T12:00:00').getDay();
+    const nextDow=i+1<wDays.length?new Date(wDays[i+1].date+'T12:00:00').getDay():-1;
+    if(dow===6||nextDow===1||i===wDays.length-1){weekBreaks.add(i);weeklyUnits.push({...weekUnits});weeklyOps.push({...weekOps});weeklyStock.push(wDays[i].stock?{...wDays[i].stock}:{});weekUnits={};weekOps={};}
+  }
+
+  const actToStockKey={};
+  allActs.forEach(a=>{
+    if(ACTS[a.id])actToStockKey[a.id]=ACTS[a.id].inv;
+    else if(a.type==='env_res'){const fk=a.id.replace('ENV_','');if(['BF01','BF02','BF03'].includes(fk))actToStockKey[a.id]='__resfamily__'+fk;else if(FABACTS[fk])actToStockKey[a.id]=FABACTS[fk].inv;}
+    else if(a.type==='fab')actToStockKey[a.id]='__fab__'+a.id;// batch count separate from envasado
+    else if(a.type==='kit')actToStockKey[a.id]='__kit__'+a.id.replace('KIT_','');
+  });
+
+  let x='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+  x+='<head><meta charset="utf-8"><style>td,th{border:1px solid #555;padding:3px 5px;font-family:Consolas,monospace;font-size:10px;text-align:center;vertical-align:middle}th{background:#1a2744;color:#e0e0e0;font-weight:bold}.act{text-align:left;font-weight:bold;background:#1e2a45;color:#e0e0e0;min-width:220px}.tot{background:#1a2744;color:#ffb454;font-weight:bold}.over{color:#ff4444}.ws{background:#163022;color:#bff5cf;font-weight:bold;text-align:center;line-height:1.1}.cell{line-height:1.1;font-weight:bold;min-width:42px}</style></head><body><table>';
+  x+='<tr><th class="act" rowspan="2">Actividad</th>';
+  let wn=0;
+  for(let i=0;i<wDays.length;i++){
+    x+=`<th colspan="3">${dayLabel(wDays[i].date)}</th>`;
+    if(weekBreaks.has(i)){wn++;x+=`<th class="ws" rowspan="2">Sem ${wn}<br>SI | P | C | SF</th>`;}
+  }
+  x+='</tr><tr>';
+  for(let i=0;i<wDays.length;i++){x+='<th>B1</th><th>B2</th><th>B3</th>';}
+  x+='</tr>';
+
+  for(const act of allActs){
+    const col=actColor(act.id,act.label,act.type);
+    x+=`<tr><td class="act" style="border-left:4px solid ${col.fg}">${act.label}</td>`;
+    let wi=0;
+    for(let i=0;i<wDays.length;i++){
+      const d=wDays[i];
+      for(const bn of ['B1','B2','B3']){
+        const exact=(d.entries||[]).find(e=>(e.id||e.label)===act.id&&e.block===bn);
+        const b23=(bn!=='B1')?(d.entries||[]).find(e=>(e.id||e.label)===act.id&&e.block==='B2+B3'):null;
+        const entry=exact||b23;
+        if(entry){
+          const units=entry.units||0, ops=entry.ops||0;
+          const isB3cont2=(bn==='B3'&&!exact&&b23);
+          if(isB3cont2){x+=`<td class="cell" style="background:${col.xbg};color:${col.fg}">O ${fmt(ops,0)}<br>↕ cont.</td>`;continue;}
+          const uTxt=(entry.type==='kit'||entry.type==='fab'||entry.type==='env_res')?fmt(units,0):fmt(units,1);
+          const postNote2=entry.isPostClean?'<br><b style="font-size:10px;color:#22c55e;background:#0a2a12;padding:2px 4px;border-radius:3px">★ TAREA POST-LIMPIEZA ('+(entry.serial_ops_used||entry.ops)+'op · '+(entry.serial_minutes_used||Math.round((entry.postCleanHrs||0)*60))+'min · '+fmt(entry.serial_units||entry.units, (entry.type==='kit'||entry.type==='fab'||entry.type==='env_res')?0:1)+'u)</b><br><span style="font-size:9px;color:#86efac">'+(entry.serial_cleaning_label||'')+'</span>':'';
+          x+=`<td class="cell" style="background:${col.xbg};color:${col.fg}">O ${fmt(ops,0)}<br>U ${uTxt}${postNote2}</td>`;
+        }else x+='<td></td>';
+      }
+      if(weekBreaks.has(i)){
+        const wkU=weeklyUnits[wi][act.id]||0, wkO=weeklyOps[wi][act.id]||0;
+        const sk=actToStockKey[act.id];
+        const si=sk?(wi===0?getStockGroupValue(scenarioInitialStock,sk):getStockGroupValue(weeklyStock[wi-1]||{},sk)):'';
+        const sf=sk?getStockGroupValue(weeklyStock[wi]||{},sk):'';
+        const cons=(sk!==''&&sk!==undefined&&si!==''&&sf!=='')?Math.max(0,Number(si||0)+Number(wkU||0)-Number(sf||0)):'';
+        const pTxt=wkU?((act.type==='kit'||act.type==='fab'||act.type==='env_res')?fmt(wkU,0):fmt(wkU,1)):'0';
+        const siTxt=(si!==''&&si!==undefined)?fmt(si,0):'';
+        const cTxt=(cons!==''&&cons!==undefined)?fmt(cons,0):'';
+        const sfTxt=(sf!==''&&sf!==undefined)?fmt(sf,0):'';
+        x+=`<td class="ws">SI ${siTxt}<br>P ${pTxt}<br>C ${cTxt}<br>SF ${sfTxt}</td>`;
+        wi++;
+      }
+    }
+    x+='</tr>';
+  }
+
+  x+='<tr><td class="tot">TOTAL OPS</td>';
+  let wi=0;
+  for(let i=0;i<wDays.length;i++){
+    const d=wDays[i];
+    const b1=(d.ops&&d.ops.b1)||0,b2=(d.ops&&d.ops.b2)||0,b3=(d.ops&&d.ops.b3)||0;
+    x+=`<td class="${b1>((d.opsLimit)||(lastResult.opsTotal||0))?'over':''}">${b1?('O '+fmt(b1,0)):''}</td>`;
+    x+=`<td class="${b2>((d.opsLimit)||(lastResult.opsTotal||0))?'over':''}">${b2?('O '+fmt(b2,0)):''}</td>`;
+    x+=`<td class="${b3>((d.opsLimit)||(lastResult.opsTotal||0))?'over':''}">${b3?('O '+fmt(b3,0)):''}</td>`;
+    if(weekBreaks.has(i)){
+      let weekOpsTotal=0;
+      const starts=[...weekBreaks];
+      const start=wi===0?0:starts[wi-1]+1;
+      const end=i;
+      for(let j=start;j<=end;j++){weekOpsTotal+=(wDays[j].ops?.b1||0)+(wDays[j].ops?.b2||0)+(wDays[j].ops?.b3||0);}
+      x+=`<td class="ws">O ${fmt(weekOpsTotal,0)}</td>`;wi++;
+    }
+  }
+  x+='</tr></table></body></html>';
+  const blob=new Blob([x],{type:'application/vnd.ms-excel'});
+  saveFileAs(blob,'Gantt_MPS_Bertech.xls','Gantt Excel');
+}
+
+
+// ═══════════════════════════════════════════════════
+// TABS & INIT
+// ═══════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));tab.classList.add('active');document.getElementById('view_'+tab.dataset.view).classList.add('active');}));
+
+
+// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+// ABASTECIMIENTO MENSUAL — Cálculo matemático puro (NO toca la heurística)
+// ═══════════════════════════════════════════════════
+let abastData=null;
+
+function runAbastReal(){
+  if(!lastResult||!lastResult.analytics){alert('Ejecuta el escenario principal primero (botón verde).');return;}
+  const el=document.getElementById('abastResults');if(!el)return;
+  el.innerHTML='<div style="padding:16px;text-align:center;color:#93c5fd">📊 Extrayendo datos del plan ejecutado...</div>';
+  setTimeout(()=>{try{_extractFromPlan(el);}catch(e){el.innerHTML='<div style="color:#ff6b6b">Error: '+e.message+'</div>';console.error(e);}},50);
+}
+
+function _extractFromPlan(el){
+  const analytics=lastResult.analytics;
+  const daily=analytics.daily||[];
+  if(!daily.length){el.innerHTML='<div style="color:var(--muted)">Sin datos del plan.</div>';return;}
+  const allOrders=getOrdersArray();
+  const initialStock=lastResult.initialStock||getStocks();
+
+  // Group daily data by month, find last workday per month
+  const monthMap={};
+  daily.forEach((d,i)=>{
+    const m=d.date.slice(0,7);
+    if(!monthMap[m])monthMap[m]={days:[],lastIdx:i,produced:makeFamilyMap(),dispatched:makeFamilyMap()};
+    monthMap[m].days.push(d);
+    monthMap[m].lastIdx=i;
+    FAMS_ORDER.forEach(f=>{
+      monthMap[m].produced[f]+=Number((d.produced&&d.produced[f])||0);
+      monthMap[m].dispatched[f]+=Number((d.dispatched&&d.dispatched[f])||0);
+    });
+  });
+
+  // Group orders by month
+  const ordersByMonth={};
+  allOrders.forEach(o=>{if(!o.date)return;const m=o.date.slice(0,7);if(!ordersByMonth[m])ordersByMonth[m]=[];ordersByMonth[m].push(o);});
+
+  const months=Object.keys(monthMap).sort();
+  const monthResults=[];
+
+  months.forEach((monthKey,mi)=>{
+    const mm=monthMap[monthKey];
+    const lastDay=daily[mm.lastIdx];
+    const firstDayIdx=mi>0?monthMap[months[mi-1]].lastIdx+1:0;
+    const firstDay=daily[firstDayIdx]||daily[0];
+
+    // Stock at start of month = stock at end of previous month's last day
+    const stockStart=mi>0?copyObj(daily[monthMap[months[mi-1]].lastIdx].stock):copyObj(initialStock);
+    const stockEnd=copyObj(lastDay.stock);
+
+    // Demand for this month
+    const demand=makeFamilyMap();
+    (ordersByMonth[monthKey]||[]).forEach(o=>{FAMS_ORDER.forEach(f=>{demand[f]+=Number(o[f]||0);});});
+
+    // Kits produced this month (from daily produced)
+    const kitProduced=copyObj(mm.produced);
+
+    // Kits dispatched this month
+    const kitDispatched=copyObj(mm.dispatched);
+
+    // Track fab batches in this month
+    const fabBatches={};const semiProduced={};
+    lastResult.schedule.filter(d=>d.date.startsWith(monthKey)).forEach(d=>{
+      d.entries.forEach(e=>{
+        if(e.type==='fab'){fabBatches[e.id]=(fabBatches[e.id]||0)+1;}
+        else if(e.type==='semi'){semiProduced[e.id]=(semiProduced[e.id]||0)+Number(e.units||0);}
+      });
+    });
+
+    // BOM consumption estimation (kits × BOM)
+    const bomConsumption={};
+    FAMS_ORDER.forEach(f=>{
+      if(!FAMILIES[f])return;
+      Object.entries(FAMILIES[f].bom).forEach(([inv,qty])=>{
+        bomConsumption[inv]=(bomConsumption[inv]||0)+kitProduced[f]*qty;
+      });
+    });
+
+    monthResults.push({
+      month:monthKey,
+      orders:ordersByMonth[monthKey]||[],
+      demand,
+      kitProduced,
+      kitDispatched,
+      fabBatches:copyObj(fabBatches),
+      semiProduced:copyObj(semiProduced),
+      bomConsumption:copyObj(bomConsumption),
+      stockStart:copyObj(stockStart),
+      stockEnd:copyObj(stockEnd),
+      kitsToProduce:kitProduced,// alias for renderAbastResults compat
+      dispatched:kitDispatched,
+      fabNeeded:{},// filled below
+      semiNeeded:{},// filled below
+      isReal:true,
+    });
+
+    // Build fabNeeded/semiNeeded for display compat
+    const mr=monthResults[monthResults.length-1];
+    Object.entries(fabBatches).forEach(([fabId,batches])=>{
+      if(!FABACTS[fabId])return;
+      const fa=FABACTS[fabId];
+      mr.fabNeeded[fabId]={batches,output:batches*fa.output,inv:fa.inv,deficit:0};
+    });
+    Object.entries(semiProduced).forEach(([actId,units])=>{
+      if(!ACTS[actId])return;
+      const ad=ACTS[actId];
+      mr.semiNeeded[actId]={units:Math.round(units),consumed:Math.round(bomConsumption[ad.inv]||0),inv:ad.inv,available:0};
+    });
+  });
+
+  abastData=monthResults;
+  renderAbastResults(el,monthResults);
+}
+
+function runAbastecimiento(){
+  const el=document.getElementById('abastResults');if(!el)return;
+  el.innerHTML='<div style="padding:16px;text-align:center;color:#93c5fd">🔄 Calculando consumos mensuales...</div>';
+  setTimeout(()=>{try{_calcAbast(el);}catch(e){el.innerHTML='<div style="color:#ff6b6b">Error: '+e.message+'</div>';console.error(e);}},50);
+}
+
+function _calcAbast(el){
+  const allOrders=getOrdersArray();
+  if(!allOrders.length){el.innerHTML='<div style="color:var(--muted)">Sin pedidos S&OP.</div>';return;}
+
+  // Group orders by month
+  const monthMap={};
+  allOrders.forEach(o=>{if(!o.date)return;const m=o.date.slice(0,7);if(!monthMap[m])monthMap[m]=[];monthMap[m].push(o);});
+  const months=Object.keys(monthMap).sort();
+
+  let carryStock=getStocks();
+  const monthResults=[];
+
+  months.forEach((monthKey,mi)=>{
+    const monthOrders=monthMap[monthKey];
+    // Month demand
+    const demand=makeFamilyMap();
+    monthOrders.forEach(o=>{FAMS_ORDER.forEach(f=>{demand[f]+=Number(o[f]||0);});});
+
+    const stockStart=copyObj(carryStock);
+
+    // ── STEP 1: Kits to produce = demand - kit stock (produce ALL, even if desfasado) ──
+    const kitsToProduce=makeFamilyMap();
+    FAMS_ORDER.forEach(f=>{
+      const sk=KIT_STOCK_MAP[f];
+      const initKits=Math.floor(Number(stockStart[sk]||0));
+      kitsToProduce[f]=Math.max(0,demand[f]-initKits);
+    });
+
+    // ── STEP 2: BOM consumption (pure math: kits × BOM qty) ──
+    const bomConsumption={};// inv → total units consumed
+    FAMS_ORDER.forEach(f=>{
+      if(!FAMILIES[f]||!kitsToProduce[f])return;
+      Object.entries(FAMILIES[f].bom).forEach(([inv,qty])=>{
+        bomConsumption[inv]=(bomConsumption[inv]||0)+kitsToProduce[f]*qty;
+      });
+    });
+
+    // ── STEP 3: Fabrication needed (resins where stock < consumption) ──
+    const fabNeeded={};// fab_id → {batches, output, inv}
+    const resinInvs={};// inv → fab_id mapping
+    Object.entries(FABACTS).forEach(([fabId,fa])=>{resinInvs[fa.inv]=fabId;});
+
+    // Check each resin component
+    Object.entries(FABACTS).forEach(([fabId,fa])=>{
+      const inv=fa.inv;
+      const consumed=bomConsumption[inv]||0;
+      const available=Number(stockStart[inv]||0);
+      if(consumed>available){
+        const deficit=consumed-available;
+        const batches=Math.ceil(deficit/fa.output);
+        fabNeeded[fabId]={batches,output:batches*fa.output,inv,deficit};
+      }
+    });
+
+    // ── STEP 4: Semi-elaborated production needed ──
+    // For each BOM component that is NOT a resin: check if stock covers consumption
+    const semiNeeded={};// act_id → {units, inv}
+    Object.entries(ACTS).forEach(([actId,ad])=>{
+      const inv=ad.inv;
+      const consumed=bomConsumption[inv]||0;
+      const available=Number(stockStart[inv]||0);
+      // Add resin production to available if applicable
+      let fromFab=0;
+      Object.values(fabNeeded).forEach(fn=>{if(fn.inv===inv)fromFab+=fn.output;});
+      const totalAvail=available+fromFab;
+      if(consumed>0){
+        const toProduce=Math.max(0,consumed-totalAvail);
+        semiNeeded[actId]={units:Math.ceil(toProduce),consumed:Math.ceil(consumed),inv,available:Math.floor(totalAvail)};
+      }
+    });
+
+    // ── STEP 5: Stock final calculation ──
+    const stockEnd=copyObj(stockStart);
+
+    // Add fabrication output
+    Object.values(fabNeeded).forEach(fn=>{stockEnd[fn.inv]=(stockEnd[fn.inv]||0)+fn.output;});
+
+    // Add semi production (produce exactly what's needed beyond stock)
+    Object.entries(semiNeeded).forEach(([actId,sn])=>{
+      if(sn.units>0)stockEnd[sn.inv]=(stockEnd[sn.inv]||0)+sn.units;
+    });
+
+    // Subtract BOM consumption from kits
+    Object.entries(bomConsumption).forEach(([inv,qty])=>{
+      stockEnd[inv]=Math.max(0,(stockEnd[inv]||0)-qty);
+    });
+
+    // Kits: add produced, subtract dispatched
+    const dispatched=makeFamilyMap();
+    FAMS_ORDER.forEach(f=>{
+      const sk=KIT_STOCK_MAP[f];
+      // Produce kits
+      stockEnd[sk]=(stockEnd[sk]||0)+kitsToProduce[f];
+      // Dispatch all demand (treat as full fulfillment for this month)
+      const ship=Math.min(Math.floor(stockEnd[sk]||0),demand[f]);
+      stockEnd[sk]=Math.max(0,(stockEnd[sk]||0)-ship);
+      dispatched[f]=ship;
+    });
+
+    monthResults.push({
+      month:monthKey,orders:monthOrders,demand,
+      kitsToProduce,
+      bomConsumption:copyObj(bomConsumption),
+      fabNeeded:copyObj(fabNeeded),
+      semiNeeded:copyObj(semiNeeded),
+      dispatched,
+      stockStart:copyObj(stockStart),
+      stockEnd:copyObj(stockEnd),
+    });
+
+    // Carry to next month
+    carryStock=copyObj(stockEnd);
+  });
+
+  abastData=monthResults;
+  renderAbastResults(el,monthResults);
+}
+
+function renderAbastResults(el,results){
+  const mNames=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  let h='';
+
+  results.forEach((mr,mi)=>{
+    const mm=Number(mr.month.slice(5,7));const mName=mNames[mm]+' '+mr.month.slice(0,4);
+    const clients=[...new Set((mr.orders||[]).map(o=>o.client).filter(Boolean))].join(', ');
+    const bg=mi%2===0?'rgba(86,212,200,.04)':'rgba(110,168,254,.04)';
+
+    h+='<div style="border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;background:'+bg+'">';
+    h+='<div style="padding:12px 16px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">';
+    h+='<div style="font-size:16px;font-weight:900;color:var(--text)">📦 '+mName+'</div>';
+    h+='<div style="font-size:11px;color:var(--muted)">Clientes: <b>'+clients+'</b></div></div>';
+    h+='<div style="padding:10px 16px">';
+
+    // ── DEMANDA Y PRODUCCIÓN DE KITS ──
+    h+='<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:4px">📦 Kits terminados — Demanda, producción y despacho</div>';
+    h+='<table style="width:100%;font-size:11px;border-collapse:collapse;margin-bottom:12px"><tr style="background:rgba(255,255,255,.04)"><th style="text-align:left;padding:4px 8px">Familia</th><th style="padding:4px">Demanda mes</th><th style="padding:4px">Stock inicial kits</th><th style="padding:4px">Kits a producir</th><th style="padding:4px">Despacho</th></tr>';
+    FAMS_ORDER.forEach(f=>{
+      const dem=mr.demand[f]||0;if(!dem&&!mr.kitsToProduce[f])return;
+      const sk=KIT_STOCK_MAP[f];const initK=Math.floor(Number(mr.stockStart[sk]||0));
+      const prod=mr.kitsToProduce[f]||0;const disp=mr.dispatched[f]||0;
+      h+='<tr style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:4px 8px;font-weight:700">'+f.replace('_',' ')+'</td><td style="text-align:center;padding:4px;font-weight:700">'+fmt(dem,0)+'</td><td style="text-align:center;padding:4px;color:var(--cyan)">'+fmt(initK,0)+'</td><td style="text-align:center;padding:4px;color:var(--green);font-weight:700">'+fmt(prod,0)+'</td><td style="text-align:center;padding:4px;color:var(--blue);font-weight:700">'+fmt(disp,0)+'</td></tr>';
+    });
+    h+='</table>';
+
+    // ── CONSUMO BOM POR KIT (lo que Francisco necesita para fórmulas) ──
+    h+='<div style="font-size:12px;font-weight:800;color:var(--orange);margin-bottom:4px">📋 Consumo BOM por armado de kits (para cálculo de MP/insumos)</div>';
+    h+='<table style="width:100%;font-size:11px;border-collapse:collapse;margin-bottom:12px"><tr style="background:rgba(255,255,255,.04)"><th style="text-align:left;padding:4px 8px">Componente BOM</th><th style="padding:4px">Consumo total</th><th style="padding:4px">Detalle por familia</th></tr>';
+    // Build detail per component
+    const bomDetail={};
+    FAMS_ORDER.forEach(f=>{if(!FAMILIES[f]||!mr.kitsToProduce[f])return;
+      Object.entries(FAMILIES[f].bom).forEach(([inv,qty])=>{
+        if(!bomDetail[inv])bomDetail[inv]={total:0,detail:[]};
+        const consumed=mr.kitsToProduce[f]*qty;
+        bomDetail[inv].total+=consumed;
+        bomDetail[inv].detail.push(f.replace('_',' ')+': '+fmt(mr.kitsToProduce[f],0)+'×'+qty+'='+fmt(consumed,0));
+      });
+    });
+    Object.entries(bomDetail).sort((a,b)=>b[1].total-a[1].total).forEach(([inv,d])=>{
+      const label=(STOCK_META.find(m=>m.key===inv)||{}).label||inv;
+      h+='<tr style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:4px 8px;font-weight:600">'+label.slice(0,50)+'</td><td style="text-align:center;padding:4px;color:var(--orange);font-weight:700">'+fmt(d.total,0)+'</td><td style="padding:4px;font-size:10px;color:var(--muted)">'+d.detail.join(' · ')+'</td></tr>';
+    });
+    h+='</table>';
+
+    // ── FABRICACIÓN DE RESINAS ──
+    h+='<div style="font-size:12px;font-weight:800;color:#ff6b6b;margin-bottom:4px">🏭 Fabricación de resinas necesaria</div>';
+    const fabKeys=Object.keys(mr.fabNeeded).sort();
+    if(fabKeys.length){
+      h+='<table style="width:100%;font-size:11px;border-collapse:collapse;margin-bottom:12px"><tr style="background:rgba(255,255,255,.04)"><th style="text-align:left;padding:4px 8px">Resina</th><th style="padding:4px">Batches</th><th style="padding:4px">Producción</th><th style="padding:4px">Stock inicial</th><th style="padding:4px">Consumo</th><th style="padding:4px">Déficit</th></tr>';
+      fabKeys.forEach(r=>{const fn=mr.fabNeeded[r];const fa=FABACTS[r];
+        const stk=Math.floor(Number(mr.stockStart[fa.inv]||0));
+        const consumed=Math.round(mr.bomConsumption[fa.inv]||0);
+        h+='<tr style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:4px 8px;font-weight:700">'+fa.label+'</td><td style="text-align:center;padding:4px;font-weight:800;color:#ff6b6b">'+fn.batches+'</td><td style="text-align:center;padding:4px">'+fmt(fn.output,0)+' und</td><td style="text-align:center;padding:4px;color:var(--cyan)">'+fmt(stk,0)+'</td><td style="text-align:center;padding:4px">'+fmt(consumed,0)+'</td><td style="text-align:center;padding:4px;color:#ff6b6b">'+fmt(fn.deficit,0)+'</td></tr>';
+      });
+      h+='</table>';
+    } else {
+      h+='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:6px;background:rgba(34,197,94,.06);border-radius:6px">✅ Stock de resinas cubre toda la demanda — sin fabricaciones necesarias</div>';
+    }
+
+    // ── SEMIELABORADOS ──
+    h+='<div style="font-size:12px;font-weight:800;color:var(--green);margin-bottom:4px">⚙️ Semielaborados — producción necesaria</div>';
+    h+='<table style="width:100%;font-size:11px;border-collapse:collapse;margin-bottom:12px"><tr style="background:rgba(255,255,255,.04)"><th style="text-align:left;padding:4px 8px">Actividad</th><th style="padding:4px">Consumo total</th><th style="padding:4px">Stock disponible</th><th style="padding:4px">A producir</th><th style="padding:4px">Componente</th></tr>';
+    let anySemi=false;
+    Object.entries(mr.semiNeeded).sort((a,b)=>(b[1].consumed||0)-(a[1].consumed||0)).forEach(([actId,sn])=>{
+      if(!sn.consumed)return;anySemi=true;
+      h+='<tr style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:4px 8px;font-weight:600">'+ACTS[actId].label+'</td><td style="text-align:center;padding:4px;font-weight:700">'+fmt(sn.consumed,0)+'</td><td style="text-align:center;padding:4px;color:var(--cyan)">'+fmt(sn.available,0)+'</td><td style="text-align:center;padding:4px;color:'+(sn.units>0?'var(--green)':'var(--muted)')+';font-weight:700">'+(sn.units>0?fmt(sn.units,0):'Stock cubre')+'</td><td style="padding:4px;font-size:10px;color:var(--muted)">'+sn.inv+'</td></tr>';
+    });
+    if(!anySemi)h+='<tr><td colspan="5" style="padding:6px;color:var(--muted)">Sin semielaborados requeridos</td></tr>';
+    h+='</table>';
+
+    // ── STOCK FINAL BOM ──
+    h+='<details style="border:1px solid var(--border);border-radius:8px"><summary style="padding:8px 10px;cursor:pointer;font-weight:700;font-size:11px;color:var(--text)">📊 Stock BOM al cierre de '+mName+' → arrastra al mes siguiente</summary><div style="padding:8px 10px">';
+    h+='<table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:rgba(255,255,255,.03)"><th style="text-align:left;padding:3px 6px">Componente</th><th style="padding:3px">Inicio</th><th style="padding:3px">+ Producido</th><th style="padding:3px">- Consumido</th><th style="padding:3px">= Final</th></tr>';
+    STOCK_META.filter(m=>m.used).forEach(m=>{
+      const ini=Math.floor(Number(mr.stockStart[m.key]||0));
+      const fin=Math.floor(Number(mr.stockEnd[m.key]||0));
+      const consumed=Math.round(mr.bomConsumption[m.key]||0);
+      // Production = fab + semi
+      let produced=0;
+      Object.values(mr.fabNeeded).forEach(fn=>{if(fn.inv===m.key)produced+=fn.output;});
+      Object.entries(mr.semiNeeded).forEach(([a,sn])=>{if(sn.inv===m.key&&sn.units>0)produced+=sn.units;});
+      // Kit stock adjustments
+      const isKit=m.key.startsWith('kit_');
+      const kitFam=isKit?FAMS_ORDER.find(f=>KIT_STOCK_MAP[f]===m.key):null;
+      if(isKit&&kitFam){produced=mr.kitsToProduce[kitFam]||0;}
+      const disp=isKit&&kitFam?mr.dispatched[kitFam]||0:0;
+      const totalCons=isKit?disp:consumed;
+      const c=fin>ini?'#45d483':fin<ini?'#ff6b6b':'var(--muted)';
+      h+='<tr style="border-bottom:1px solid rgba(255,255,255,.03)"><td style="padding:2px 6px">'+m.label.slice(0,50)+'</td><td style="text-align:center;padding:2px">'+fmt(ini,0)+'</td><td style="text-align:center;padding:2px;color:#45d483">'+(produced?'+'+fmt(produced,0):'—')+'</td><td style="text-align:center;padding:2px;color:#ff6b6b">'+(totalCons?'-'+fmt(totalCons,0):'—')+'</td><td style="text-align:center;padding:2px;font-weight:700;color:'+c+'">'+fmt(fin,0)+'</td></tr>';
+    });
+    h+='</table></div></details>';
+
+    h+='</div></div>';
+  });
+
+  el.innerHTML=h;
+}
+
+function exportAbastXLS(){
+  if(!abastData||!abastData.length){alert('Ejecuta primero.');return;}
+  const mNames=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  let x='<html><head><meta charset="UTF-8"><style>body{font-family:Calibri;font-size:10px}table{border-collapse:collapse;width:100%;margin-bottom:20px}th,td{border:1px solid #aaa;padding:3px 6px}th{background:#1a3366;color:#fff;font-size:10px;white-space:nowrap}';
+  x+='.hdr{background:#0d2240;color:#6ea8fe;font-weight:800;font-size:13px}.hdr2{background:#162b50;color:#93c5fd;font-weight:700;font-size:11px}';
+  x+='.sub-fab{background:#fff3e0;font-weight:700;font-size:11px;color:#e65100}.sub-semi{background:#e8f5e9;font-weight:700;font-size:11px;color:#2e7d32}.sub-kit{background:#e3f2fd;font-weight:700;font-size:11px;color:#1565c0}.sub-stk{background:#f3e5f5;font-weight:700;font-size:11px;color:#6a1b9a}';
+  x+='.sap{font-family:Consolas,monospace;font-size:9px;color:#555}.num{text-align:right;font-family:Consolas,monospace;font-size:10px}.pos{color:#2e7d32;font-weight:700}.neg{color:#c62828;font-weight:700}.zero{color:#999}.hi{background:#fffde7;font-weight:700}.tot{background:#eceff1;font-weight:700}';
+  x+='</style></head><body>';
+  x+='<h2>📦 Abastecimiento Mensual — MPS Bertech v52</h2>';
+  x+='<p>Generado: '+new Date().toLocaleString('es-CL')+' · Motor: Cálculo matemático puro (no usa heurística). Batch estándar genera remanentes que se arrastran al mes siguiente.</p>';
+
+  abastData.forEach((mr,mi)=>{
+    const mm=Number(mr.month.slice(5,7));const mName=mNames[mm]+' '+mr.month.slice(0,4);
+    const clients=[...new Set((mr.orders||[]).map(o=>o.client).filter(Boolean))].join(', ');
+
+    x+='<table>';
+    x+='<tr class="hdr"><td colspan="9">📦 '+mName+' · Clientes: '+clients+'</td></tr>';
+
+    // ══════════════════════════════════════════════════
+    // BLOQUE 1: DEMANDA S&OP
+    // ══════════════════════════════════════════════════
+    x+='<tr class="hdr2"><td colspan="9">📋 DEMANDA S&OP DEL MES</td></tr>';
+    x+='<tr><th>Fecha ETD</th><th>Cliente</th><th>OC</th>';
+    FAMS_ORDER.forEach(f=>{x+='<th>'+f.replace('_',' ')+'</th>';});
+    x+='</tr>';
+    (mr.orders||[]).forEach(o=>{
+      x+='<tr><td>'+o.date+'</td><td>'+(o.client||'')+'</td><td>'+(o.oc||'')+'</td>';
+      FAMS_ORDER.forEach(f=>{const v=Number(o[f]||0);x+='<td class="num">'+(v?fmt(v,0):'')+'</td>';});
+      x+='</tr>';
+    });
+    x+='<tr class="tot"><td colspan="3">TOTAL DEMANDA MES</td>';
+    FAMS_ORDER.forEach(f=>{x+='<td class="num">'+(mr.demand[f]?fmt(mr.demand[f],0):'')+'</td>';});
+    x+='</tr>';
+
+    // ══════════════════════════════════════════════════
+    // BLOQUE 2: FABRICACIÓN Y ENVASADO DE RESINAS
+    // ══════════════════════════════════════════════════
+    x+='<tr class="sub-fab"><td colspan="9">🏭 FABRICACIÓN Y ENVASADO DE RESINAS — Stock inicial → Consumo por kits → Déficit → Batches necesarios → Producción → Stock final</td></tr>';
+    x+='<tr><th>Código SAP</th><th>Código interno</th><th>Resina / Actividad</th><th>Stock inicial</th><th>Consumo por kits</th><th>Déficit</th><th>Batches</th><th>Producción (und.)</th><th>Stock final</th></tr>';
+
+    Object.entries(FABACTS).forEach(([fabId,fa])=>{
+      const inv=fa.inv;
+      const ini=Math.floor(Number(mr.stockStart[inv]||0));
+      const consumed=Math.round(mr.bomConsumption[inv]||0);
+      const fn=mr.fabNeeded[fabId];
+      const batches=fn?fn.batches:0;
+      const produced=fn?fn.output:0;
+      const deficit=fn?Math.round(fn.deficit):0;
+      const fin=Math.floor(Number(mr.stockEnd[inv]||0));
+      const hasActivity=consumed>0||batches>0||ini>0;
+      if(!hasActivity)return;
+      // Row: Fabrication
+      x+='<tr style="background:#fff8e1"><td class="sap">'+(FAB_SAP[fabId]||'')+'</td><td class="sap">'+fabId+'</td><td><b>'+fa.label+'</b> ('+fa.output+'/batch)</td>';
+      x+='<td class="num">'+fmt(ini,0)+'</td>';
+      x+='<td class="num">'+(consumed?fmt(consumed,0):'—')+'</td>';
+      x+='<td class="num '+(deficit>0?'neg':'')+'">'+(deficit>0?fmt(deficit,0):'—')+'</td>';
+      x+='<td class="num '+(batches>0?'neg':'')+'">'+(batches>0?batches:'—')+'</td>';
+      x+='<td class="num '+(produced>0?'pos':'')+'">'+(produced>0?fmt(produced,0):'—')+'</td>';
+      x+='<td class="num hi">'+fmt(fin,0)+'</td></tr>';
+      // Sub-row: detail of consumption by family
+      if(consumed>0){
+        const detail=[];
+        FAMS_ORDER.forEach(f=>{
+          if(!FAMILIES[f]||!mr.kitsToProduce[f])return;
+          const qty=FAMILIES[f].bom[inv]||0;
+          if(qty>0)detail.push(f.replace('_',' ')+': '+fmt(mr.kitsToProduce[f],0)+' kits × '+qty+' = '+fmt(mr.kitsToProduce[f]*qty,0));
+        });
+        if(detail.length)x+='<tr style="background:#fffde7;font-size:9px"><td></td><td></td><td colspan="7" style="color:#666">↳ Consumo: '+detail.join(' · ')+'</td></tr>';
+      }
+    });
+
+    // ══════════════════════════════════════════════════
+    // BLOQUE 3: SEMIELABORADOS (Envasados + Etiquetados)
+    // ══════════════════════════════════════════════════
+    x+='<tr class="sub-semi"><td colspan="9">⚙️ SEMIELABORADOS — Potes etiquetados · Solventes envasados/etiquetados · Imprimantes · Catalizadores · Baldes</td></tr>';
+    x+='<tr><th>Código SAP</th><th>Código interno</th><th>Actividad</th><th>Stock inicial</th><th>Consumo por kits</th><th>Stock disponible (ini.+fab.)</th><th>A producir</th><th>Cap. 8h (ref.)</th><th>Stock final</th></tr>';
+
+    // Group by type: potes, solventes, imprimantes, catalizadores, baldes
+    const semiGroups=[
+      {label:'Potes etiquetados',acts:['ETI_POTE_BF03','ETI_POTE_BF01','ETI_POTE_BF02']},
+      {label:'Solvente envasado y etiquetado',acts:['ENV_SOLV','ETI_SOLV_FLEX','ETI_SOLV_DUR']},
+      {label:'Imprimante goma',acts:['ENV_IMP_GOMA','ETI_IMP_GOMA']},
+      {label:'Imprimante fierro A',acts:['ENV_IMP_FA','ETI_IMP_FA']},
+      {label:'Imprimante fierro B',acts:['ENV_IMP_FB','ETI_IMP_FB']},
+      {label:'Catalizador',acts:['CAT_BF03','ENV_CAT_0102','ETI_CAT_0102']},
+      {label:'Baldes etiquetados',acts:['ETI_BALDE5','ETI_BALDE10','ETI_BALDE5_MX2','ETI_BALDE10_MX2']},
+    ];
+    semiGroups.forEach(sg=>{
+      const hasData=sg.acts.some(a=>mr.semiNeeded[a]&&mr.semiNeeded[a].consumed>0);
+      if(!hasData)return;
+      x+='<tr style="background:#e8f5e9"><td colspan="9" style="font-weight:700;font-size:10px;color:#2e7d32">▸ '+sg.label+'</td></tr>';
+      sg.acts.forEach(a=>{
+        const ad=ACTS[a];if(!ad)return;
+        const sn=mr.semiNeeded[a];
+        const inv=ad.inv;
+        const ini=Math.floor(Number(mr.stockStart[inv]||0));
+        const consumed=sn?Math.round(sn.consumed):0;
+        const avail=sn?Math.floor(sn.available):ini;
+        const toProd=sn&&sn.units>0?sn.units:0;
+        const fin=Math.floor(Number(mr.stockEnd[inv]||0));
+        if(!consumed&&!ini)return;
+        x+='<tr><td class="sap">'+(ACT_SAP[a]||'')+'</td><td class="sap">'+a+'</td><td>'+ad.label+'</td>';
+        x+='<td class="num">'+fmt(ini,0)+'</td>';
+        x+='<td class="num">'+(consumed?fmt(consumed,0):'—')+'</td>';
+        x+='<td class="num">'+fmt(avail,0)+'</td>';
+        x+='<td class="num '+(toProd>0?'pos':'')+'">'+(toProd>0?fmt(toProd,0):'Stock cubre')+'</td>';
+        x+='<td class="num" style="color:#999">'+ad.cap8+'</td>';
+        x+='<td class="num hi">'+fmt(fin,0)+'</td></tr>';
+      });
+    });
+
+    // ══════════════════════════════════════════════════
+    // BLOQUE 4: KITS TERMINADOS Y PRODUCTO TERMINADO
+    // ══════════════════════════════════════════════════
+    x+='<tr class="sub-kit"><td colspan="9">📦 KITS TERMINADOS / PRODUCTO TERMINADO — Armado y despacho</td></tr>';
+    x+='<tr><th>Código SAP</th><th>Código interno</th><th>Familia PT</th><th>Stock inicial kits</th><th>Demanda mes</th><th>Kits a producir</th><th>Total disponible</th><th>Despacho</th><th>Stock final kits</th></tr>';
+
+    FAMS_ORDER.forEach(f=>{
+      const dem=mr.demand[f]||0;const prod=mr.kitsToProduce[f]||0;if(!dem&&!prod)return;
+      const sk=KIT_STOCK_MAP[f];
+      const ini=Math.floor(Number(mr.stockStart[sk]||0));
+      const totalDisp=ini+prod;
+      const disp=mr.dispatched[f]||0;
+      const fin=Math.floor(Number(mr.stockEnd[sk]||0));
+      x+='<tr><td class="sap">'+(KIT_SAP[f]||'')+'</td><td class="sap">KIT_'+f+'</td><td><b>'+f.replace('_',' ')+'</b></td>';
+      x+='<td class="num">'+fmt(ini,0)+'</td>';
+      x+='<td class="num" style="font-weight:700">'+fmt(dem,0)+'</td>';
+      x+='<td class="num pos">'+fmt(prod,0)+'</td>';
+      x+='<td class="num">'+fmt(totalDisp,0)+'</td>';
+      x+='<td class="num">'+fmt(disp,0)+'</td>';
+      x+='<td class="num hi">'+fmt(fin,0)+'</td></tr>';
+    });
+
+    // Consumo BOM detallado (tabla cruzada para fórmulas)
+    x+='<tr class="hdr2"><td colspan="9">📋 CONSUMO BOM DETALLADO — Desglose por familia (kits a producir × BOM unitario)</td></tr>';
+    x+='<tr><th>Código SAP</th><th>Código interno</th><th>Componente BOM</th>';
+    const famCols=['BF03','BF01','BF02','WUR','MX1_5','MX1_10','MX2_5','MX2_10'];
+    famCols.forEach(f=>{x+='<th>'+f.replace('_',' ')+'</th>';});
+    x+='<th>TOTAL</th></tr>';
+
+    const allComps=new Set();
+    FAMS_ORDER.forEach(f=>{if(FAMILIES[f]&&mr.kitsToProduce[f])Object.keys(FAMILIES[f].bom).forEach(inv=>allComps.add(inv));});
+
+    [...allComps].map(inv=>({inv,total:mr.bomConsumption[inv]||0})).sort((a,b)=>b.total-a.total).forEach(({inv,total})=>{
+      const meta=STOCK_META.find(m=>m.key===inv);
+      x+='<tr><td class="sap">'+(meta?meta.sap:'')+'</td><td class="sap">'+inv+'</td><td>'+(meta?meta.label:inv)+'</td>';
+      famCols.forEach(f=>{
+        const qty=FAMILIES[f]&&FAMILIES[f].bom[inv]?FAMILIES[f].bom[inv]:0;
+        const kits=mr.kitsToProduce[f]||0;
+        const cons=qty*kits;
+        x+='<td class="num" style="font-size:9px">'+(cons?fmt(kits,0)+'×'+qty+'='+fmt(cons,0):'')+'</td>';
+      });
+      x+='<td class="num" style="font-weight:700">'+fmt(total,0)+'</td></tr>';
+    });
+
+    // ══════════════════════════════════════════════════
+    // BLOQUE 5: STOCK FINAL COMPLETO (arrastra al siguiente mes)
+    // ══════════════════════════════════════════════════
+    x+='<tr class="sub-stk"><td colspan="9">📊 STOCK FINAL AL CIERRE DE '+mName.toUpperCase()+' → Stock inicial del mes siguiente</td></tr>';
+    x+='<tr><th>Código SAP</th><th>Código interno</th><th>Componente</th><th>Stock inicio mes</th><th>+ Producido (fab./semi.)</th><th>- Consumido (BOM/despacho)</th><th>= Stock final</th><th>Δ</th><th>Observación</th></tr>';
+
+    STOCK_META.filter(m=>m.used).forEach(m=>{
+      const ini=Math.floor(Number(mr.stockStart[m.key]||0));
+      const fin=Math.floor(Number(mr.stockEnd[m.key]||0));
+      const consumed=Math.round(mr.bomConsumption[m.key]||0);
+      let produced=0;
+      Object.values(mr.fabNeeded).forEach(fn=>{if(fn.inv===m.key)produced+=fn.output;});
+      Object.entries(mr.semiNeeded).forEach(([a2,sn])=>{if(sn.inv===m.key&&sn.units>0)produced+=sn.units;});
+      // For kits
+      const isKit=m.key.startsWith('kit_');
+      const kitFam=isKit?FAMS_ORDER.find(f=>KIT_STOCK_MAP[f]===m.key):null;
+      if(isKit&&kitFam){produced=mr.kitsToProduce[kitFam]||0;}
+      const totalCons=isKit?(mr.dispatched[kitFam]||0):consumed;
+
+      if(!ini&&!fin&&!produced&&!totalCons)return;
+      const delta=fin-ini;
+      const cls=delta>0?'pos':delta<0?'neg':'zero';
+      let obs='';
+      if(isKit)obs='Kit terminado';
+      else if(Object.values(FABACTS).some(fa=>fa.inv===m.key))obs='Resina (fab.+env.)';
+      else obs='Semielaborado';
+      x+='<tr><td class="sap">'+(m.sap||'')+'</td><td class="sap">'+m.key+'</td><td>'+m.label+'</td>';
+      x+='<td class="num">'+fmt(ini,0)+'</td>';
+      x+='<td class="num '+(produced?'pos':'')+'">'+(produced?'+'+fmt(produced,0):'')+'</td>';
+      x+='<td class="num '+(totalCons?'neg':'')+'">'+(totalCons?'-'+fmt(totalCons,0):'')+'</td>';
+      x+='<td class="num hi" style="font-size:11px">'+fmt(fin,0)+'</td>';
+      x+='<td class="num '+cls+'">'+(delta>=0?'+':'')+fmt(delta,0)+'</td>';
+      x+='<td style="font-size:9px;color:#666">'+obs+'</td></tr>';
+    });
+
+    x+='</table>';
+  });
+
+  x+='</body></html>';
+  saveFileAs(new Blob([x],{type:'application/vnd.ms-excel'}),'Abastecimiento_BOM_v52.xls');
+}
+
+// ═══════════════════════════════════════════════════
+// RESUMEN EJECUTIVO EXCEL — con códigos SAP
+// ═══════════════════════════════════════════════════
+function exportResumenEjecutivoXLS(){
+  if(!lastResult){alert('Ejecuta el escenario primero.');return;}
+  const {goals,displayKits,violations}=lastResult;
+  const analytics=lastResult.analytics||getPlanAnalytics(lastResult,orders);
+  const orderStatus=getCurrentPlanOrderStatus(lastResult,orders);
+  const finalStock=analytics.finalStock||{};
+  const initialStock=lastResult.initialStock||{};
+  const finalNet=(analytics.daily.length?analytics.daily[analytics.daily.length-1].netKits:makeFamilyMap());
+  const totalDispatched=makeFamilyMap();
+  analytics.daily.forEach(d=>{Object.keys(totalDispatched).forEach(f=>{totalDispatched[f]+=Number(d.dispatched[f]||0);});});
+
+  let x='<html><head><meta charset="UTF-8"><style>body{font-family:Calibri;font-size:11px}table{border-collapse:collapse;width:100%;margin-bottom:18px}th,td{border:1px solid #bbb;padding:4px 7px}th{background:#1a3366;color:#fff;font-size:10px}.hdr{background:#0d2240;color:#6ea8fe;font-weight:800;font-size:13px}.sub{background:#e8f0fe;font-weight:700;font-size:11px}.sap{font-family:Consolas,monospace;font-size:9px;color:#333}.num{text-align:right;font-family:Consolas,monospace}.ok{background:#d4edda;color:#155724;font-weight:700}.fail{background:#f8d7da;color:#721c24;font-weight:700}.partial{background:#fff3cd;color:#856404;font-weight:700}.pos{color:#0a7a2f;font-weight:700}.neg{color:#b91c1c;font-weight:700}</style></head><body>';
+  x+='<h2>📊 Resumen Ejecutivo MPS — Bertech v53</h2>';
+  x+='<p>Generado: '+new Date().toLocaleString('es-CL')+' · Operadores: '+opsProfileLabel(lastResult)+' · Horizonte: '+(document.getElementById('start').value)+' al '+(document.getElementById('end').value)+'</p>';
+
+  // ── KPIs globales ──
+  const total=Object.values(displayKits).reduce((a,b)=>a+b,0);
+  const targetTotal=Object.values(goals).reduce((a,b)=>a+b,0);
+  const achieved=achievedTotal(displayKits,goals);
+  const etdOk=orderStatus.filter(x2=>x2.ok).length;
+  x+='<table><tr class="hdr"><td colspan="4">KPIs GLOBALES</td></tr>';
+  x+='<tr><th>Total Kits Producidos</th><th>% Cumplimiento Meta</th><th>ETDs Cumplidas</th><th>Violaciones BOM</th></tr>';
+  x+='<tr><td class="num" style="font-weight:700;font-size:14px">'+fmt(total,0)+'</td><td class="num" style="font-weight:700;font-size:14px">'+(targetTotal>0?((100*achieved/targetTotal).toFixed(1)+'%'):'0%')+'</td><td class="num" style="font-weight:700;font-size:14px">'+etdOk+'/'+orderStatus.length+'</td><td class="num" style="font-weight:700">'+violations+'</td></tr></table>';
+
+  // ── Cumplimiento por familia con SAP ──
+  x+='<table><tr class="hdr"><td colspan="8">CUMPLIMIENTO POR FAMILIA DE KITS</td></tr>';
+  x+='<tr><th>Código SAP</th><th>Código interno</th><th>Familia</th><th>Objetivo</th><th>Plan+Inicial</th><th>Despachado</th><th>Stock neto final</th><th>% meta</th></tr>';
+  Object.keys(FAMILIES).forEach(f=>{const obj=goals[f]||0,got=displayKits[f]||0,net=finalNet[f]||0,disp=totalDispatched[f]||0,ach=Math.min(got,obj||0);if(!obj&&!got&&!net&&!disp)return;
+    x+='<tr><td class="sap">'+(KIT_SAP[f]||'')+'</td><td class="sap">KIT_'+f+'</td><td><b>'+FAMILIES[f].label+'</b></td><td class="num">'+fmt(obj,0)+'</td><td class="num">'+fmt(got,0)+'</td><td class="num">'+fmt(disp,0)+'</td><td class="num" style="font-weight:700">'+fmt(net,0)+'</td><td class="num">'+(obj?(100*ach/obj).toFixed(1)+'%':'-')+'</td></tr>';
+  });
+  x+='</table>';
+
+  // ── Estado ETD por pedido ──
+  if(orderStatus.length){
+    x+='<table><tr class="hdr"><td colspan="6">CUMPLIMIENTO POR PEDIDO / ETD</td></tr>';
+    x+='<tr><th>Fecha ETD</th><th>Cliente</th><th>OC</th><th>Solicitado</th><th>Despachable</th><th>Estado</th></tr>';
+    orderStatus.forEach(s=>{
+      const reqTxt=FAMS_ORDER.filter(f=>Number(s.delta[f]||0)>0).map(f=>f.replace('_',' ')+':'+fmt(s.delta[f],0)).join(' · ');
+      const dspTxt=FAMS_ORDER.filter(f=>Number(s.delta[f]||0)>0).map(f=>f.replace('_',' ')+':'+fmt((s.dispatched&&s.dispatched[f])||0,0)).join(' · ');
+      const cls=s.ok?'ok':'fail';
+      x+='<tr><td>'+s.date+'</td><td><b>'+(s.client||'')+'</b></td><td>'+(s.oc||'')+'</td><td style="font-size:10px">'+reqTxt+'</td><td style="font-size:10px">'+dspTxt+'</td><td class="'+cls+'">'+(s.ok?'✅ Completo':'🔴 Parcial')+'</td></tr>';
+    });
+    x+='</table>';
+
+    const famHeaders=['BF03','BF01','BF02','WUR','MX1_5','MX1_10','MX2_5','MX2_10'];
+    const famLabel=f=>({BF03:'BF03',BF01:'BF01',BF02:'BF02',WUR:'WUR',MX1_5:'MX1 5',MX1_10:'MX1 10',MX2_5:'MX2 5',MX2_10:'MX2 10'})[f]||f;
+
+    x+='<table><tr class="hdr"><td colspan="'+(4+famHeaders.length+1)+'">MATRIZ TABULADA POR PEDIDO — SOLICITADO</td></tr>';
+    x+='<tr><th>Fecha ETD</th><th>Cliente</th><th>OC</th><th>Estado</th>'+famHeaders.map(f=>'<th>'+famLabel(f)+'</th>').join('')+'<th>Total</th></tr>';
+    orderStatus.forEach(s=>{
+      const cls=s.ok?'ok':'fail';
+      const totalReq=famHeaders.reduce((a,f)=>a+Number(s.delta[f]||0),0);
+      x+='<tr><td>'+s.date+'</td><td><b>'+(s.client||'')+'</b></td><td>'+(s.oc||'')+'</td><td class="'+cls+'">'+(s.ok?'✅ Completo':'🔴 Parcial')+'</td>';
+      famHeaders.forEach(f=>{const v=Number(s.delta[f]||0);x+='<td class="num">'+(v?fmt(v,0):'')+'</td>';});
+      x+='<td class="num" style="font-weight:700">'+fmt(totalReq,0)+'</td></tr>';
+    });
+    x+='</table>';
+
+    x+='<table><tr class="hdr"><td colspan="'+(4+famHeaders.length+1)+'">MATRIZ TABULADA POR PEDIDO — DESPACHABLE</td></tr>';
+    x+='<tr><th>Fecha ETD</th><th>Cliente</th><th>OC</th><th>Estado</th>'+famHeaders.map(f=>'<th>'+famLabel(f)+'</th>').join('')+'<th>Total</th></tr>';
+    orderStatus.forEach(s=>{
+      const cls=s.ok?'ok':'fail';
+      const totalDsp=famHeaders.reduce((a,f)=>a+Number((s.dispatched&&s.dispatched[f])||0),0);
+      x+='<tr><td>'+s.date+'</td><td><b>'+(s.client||'')+'</b></td><td>'+(s.oc||'')+'</td><td class="'+cls+'">'+(s.ok?'✅ Completo':'🔴 Parcial')+'</td>';
+      famHeaders.forEach(f=>{const v=Number((s.dispatched&&s.dispatched[f])||0);x+='<td class="num">'+(v?fmt(v,0):'')+'</td>';});
+      x+='<td class="num" style="font-weight:700">'+fmt(totalDsp,0)+'</td></tr>';
+    });
+    x+='</table>';
+  }
+
+  // ── Producción planificada por familia y actividad ──
+  const fabProduced={};const semiProduced={};const kitProduced=makeFamilyMap();
+  lastResult.schedule.forEach(d=>{d.entries.forEach(e=>{
+    if(e.type==='fab'){fabProduced[e.id]=(fabProduced[e.id]||0)+1;}
+    else if(e.type==='env_res'){const rid=e.id.replace('ENV_','');if(FABACTS[rid])fabProduced['ENV_'+rid]=(fabProduced['ENV_'+rid]||0)+Number(e.units||0);}
+    else if(e.type==='semi'){semiProduced[e.id]=(semiProduced[e.id]||0)+Number(e.units||0);}
+    else if(e.type==='kit'){const fam=e.id.replace('KIT_','');if(FAMILIES[fam])kitProduced[fam]=(kitProduced[fam]||0)+Number(e.units||0);}
+  });});
+
+  x+='<table><tr class="hdr"><td colspan="6">PRODUCCIÓN PLANIFICADA — FABRICACIÓN DE RESINAS</td></tr>';
+  x+='<tr><th>Código SAP</th><th>Código interno</th><th>Resina</th><th>Batches</th><th>Producción (unid.)</th><th>Output/batch</th></tr>';
+  Object.keys(FABACTS).forEach(r=>{const batches=fabProduced[r]||0;const produced=fabProduced['ENV_'+r]||0;if(!batches)return;
+    x+='<tr><td class="sap">'+(FAB_SAP[r]||'')+'</td><td class="sap">'+r+'</td><td><b>'+FABACTS[r].label+'</b></td><td class="num pos">'+batches+'</td><td class="num">'+fmt(produced,0)+'</td><td class="num">'+FABACTS[r].output+'</td></tr>';
+  });
+  x+='</table>';
+
+  x+='<table><tr class="hdr"><td colspan="5">PRODUCCIÓN PLANIFICADA — SEMIELABORADOS</td></tr>';
+  x+='<tr><th>Código SAP</th><th>Código interno</th><th>Actividad</th><th>Unidades producidas</th><th>Componente BOM</th></tr>';
+  Object.entries(semiProduced).sort((a,b)=>b[1]-a[1]).forEach(([a,v])=>{if(!ACTS[a])return;
+    x+='<tr><td class="sap">'+(ACT_SAP[a]||'')+'</td><td class="sap">'+a+'</td><td>'+ACTS[a].label+'</td><td class="num pos">'+fmt(Math.round(v),0)+'</td><td class="sap">'+ACTS[a].inv+'</td></tr>';
+  });
+  x+='</table>';
+
+  x+='<table><tr class="hdr"><td colspan="5">PRODUCCIÓN PLANIFICADA — KITS ARMADOS</td></tr>';
+  x+='<tr><th>Código SAP</th><th>Código interno</th><th>Familia</th><th>Kits armados</th><th>Stock inicial kits</th></tr>';
+  FAMS_ORDER.forEach(f=>{const v=kitProduced[f]||0;const initK=Number(initialStock[KIT_STOCK_MAP[f]]||0);if(!v&&!initK)return;
+    x+='<tr><td class="sap">'+(KIT_SAP[f]||'')+'</td><td class="sap">KIT_'+f+'</td><td><b>'+FAMILIES[f].label+'</b></td><td class="num pos">'+fmt(v,0)+'</td><td class="num">'+fmt(initK,0)+'</td></tr>';
+  });
+  x+='</table>';
+
+  // ── Stock final de componentes con SAP ──
+  x+='<table><tr class="hdr"><td colspan="6">STOCK FINAL DE COMPONENTES (inventario al cierre del horizonte)</td></tr>';
+  x+='<tr><th>Código SAP</th><th>Código interno</th><th>Componente</th><th>Inicial</th><th>Final</th><th>Δ</th></tr>';
+  STOCK_META.filter(m=>m.used).forEach(m=>{
+    const ini=Number(initialStock[m.key]||0);const fin=Math.floor(Number(finalStock[m.key]||0));const d=fin-Math.floor(ini);
+    if(!ini&&!fin)return;
+    const cls=d>0?'pos':d<0?'neg':'';
+    x+='<tr><td class="sap">'+(m.sap||'')+'</td><td class="sap">'+m.key+'</td><td>'+m.label+'</td><td class="num">'+fmt(ini,0)+'</td><td class="num" style="font-weight:700">'+fmt(fin,0)+'</td><td class="num '+cls+'">'+(d>=0?'+':'')+fmt(d,0)+'</td></tr>';
+  });
+  x+='</table>';
+
+  x+='</body></html>';
+  saveFileAs(new Blob([x],{type:'application/vnd.ms-excel'}),'Resumen_Ejecutivo_MPS_v53.xls');
+}
+
+
+// SIMULACIÓN S&OP v52
+// ═══════════════════════════════════════════════════
+
+function renderSimulation(){
+  if(!lastResult||!lastResult.analytics)return;
+  const analytics=lastResult.analytics;const daily=analytics.daily||[];
+  const milestones=getOrderMilestones(getOrdersArray());
+  const el=document.getElementById('simETD');if(!el)return;
+  let h='<div style="font-size:15px;font-weight:800;color:var(--text);margin:6px 0 10px">📋 Análisis por ETD ('+lastResult.opsTotal+' operadores)</div>';
+
+  function findDailyIdxByDate(target){let idx=-1;for(let i=0;i<daily.length;i++){if(daily[i].date<=target)idx=i;}return idx;}
+  function cumAtDate(target){
+    const idx=findDailyIdxByDate(target);
+    return idx>=0 && daily[idx] ? (daily[idx].cumulativeAvail||daily[idx].cumulativePT||{}) : {};
+  }
+  function cumulativeDispatchedBeforeOrder(orderIndex, uptoDate){
+    const d=makeFamilyMap();
+    for(let k=0;k<orderIndex;k++){
+      const pm=milestones[k];
+      const cp=cumAtDate(Math.min(pm.date,uptoDate));
+      FAMS_ORDER.forEach(f=>{
+        const req=Number(pm.delta[f]||0);
+        const avail=Math.max(0,Math.floor(Number(cp[f]||0))-d[f]);
+        d[f]+=Math.min(req,avail);
+      });
+    }
+    return d;
+  }
+  function backwardWindowDates(orderIndex){
+    const ms=milestones[orderIndex];
+    const prevDate=orderIndex>0?milestones[orderIndex-1].date:null;
+    const rows=[];
+    daily.forEach(d=>{
+      const isWork=calendarData.some(c=>c.date===d.date?c.work:false);
+      if(!isWork)return;
+      if(d.date>ms.date)return;
+      if(prevDate && d.date<=prevDate)return;
+      rows.push(d.date);
+    });
+    return rows.reverse();
+  }
+  function buildBackwardTable(orderIndex){
+    const ms=milestones[orderIndex];
+    const dates=backwardWindowDates(orderIndex);
+    if(!dates.length)return '';
+    let out='<details style="margin-top:10px;border:1px solid rgba(110,168,254,.22);border-radius:10px;background:rgba(110,168,254,.04)"><summary style="padding:9px 12px;cursor:pointer;font-weight:700;font-size:12px;color:#93c5fd">⏪ ¿Si el cliente adelanta la fecha, cuánto puedo entregar? (día a día hacia atrás)</summary><div style="padding:10px 12px">';
+    out+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Se calcula el <b>máximo despachable de este pedido</b> en cada fecha anterior, descontando solo lo que ya comprometieron los ETD previos. Sirve para responder: <b>“si me adelantas la entrega, ¿cuánto te puedo tener?”</b>.</div>';
+    out+='<table style="width:100%;font-size:11px;border-collapse:collapse">';
+    out+='<tr style="background:rgba(255,255,255,.04)"><th style="padding:5px 6px;text-align:left">Fecha</th><th style="padding:5px">Despachable total</th><th style="padding:5px">Fill rate</th><th style="padding:5px">Detalle por familia</th></tr>';
+    const reqTotal=FAMS_ORDER.reduce((a,f)=>a+Number(ms.delta[f]||0),0);
+    dates.forEach(dt=>{
+      const cp=cumAtDate(dt);
+      const dispPrev=cumulativeDispatchedBeforeOrder(orderIndex, dt);
+      const ship={}; let shipTotal=0;
+      FAMS_ORDER.forEach(f=>{
+        const req=Number(ms.delta[f]||0);
+        const avail=Math.max(0,Math.floor(Number(cp[f]||0))-dispPrev[f]);
+        ship[f]=Math.min(req,avail);
+        shipTotal+=ship[f];
+      });
+      const pct=reqTotal?Math.round(100*shipTotal/reqTotal):100;
+      const cc=pct>=100?'#45d483':pct>=80?'#fbbf24':pct>=50?'#f59e0b':'#ff6b6b';
+      const detail=FAMS_ORDER.filter(f=>Number(ms.delta[f]||0)>0).map(f=>{
+        const req=Number(ms.delta[f]||0), sh=Number(ship[f]||0), gap=Math.max(0,req-sh);
+        return '<span style="white-space:nowrap"><b>'+f.replace('_',' ')+'</b>: '+fmt(sh,0)+'/'+fmt(req,0)+(gap? ' <span style="color:#ff6b6b">(-'+fmt(gap,0)+')</span>':' <span style="color:#45d483">✅</span>')+'</span>';
+      }).join(' · ');
+      out+='<tr style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:5px 6px;font-weight:700">'+dt+'</td><td style="padding:5px;text-align:center;font-weight:800;color:'+cc+'">'+fmt(shipTotal,0)+' / '+fmt(reqTotal,0)+'</td><td style="padding:5px;text-align:center;font-weight:800;color:'+cc+'">'+pct+'%</td><td style="padding:5px">'+detail+'</td></tr>';
+    });
+    out+='</table>';
+    const first=dates[dates.length-1], etd=dates[0];
+    out+='<div style="margin-top:8px;font-size:10px;color:var(--muted)">Ventana analizada: desde <b>'+first+'</b> hasta la ETD <b>'+etd+'</b>.</div>';
+    out+='</div></details>';
+    return out;
+  }
+
+  // Track dispatched so far to compute per-ETD delta
+  const dispatchedSoFar=makeFamilyMap();
+
+  milestones.forEach((ms,mi)=>{
+    let lastIdx=-1;for(let i=0;i<daily.length;i++){if(daily[i].date<=ms.date)lastIdx=i;}
+    const dayAt=lastIdx>=0?daily[lastIdx]:null;
+    const cumPT=dayAt?(dayAt.cumulativeAvail||dayAt.cumulativePT||{}):{};
+
+    // Probable date
+    let probDate='',delayWD=0;
+    for(const d of daily){const _ca=(d.cumulativeAvail||d.cumulativePT||{});if(FAMS_ORDER.every(f=>Number((_ca&&_ca[f])||0)>=Number((ms.cumulative&&ms.cumulative[f])||0))){probDate=d.date;break;}}
+    if(probDate&&probDate>ms.date)delayWD=calendarData.filter(c=>c.work&&c.date>ms.date&&c.date<=probDate).length;
+    const isOk=FAMS_ORDER.every(f=>Number(cumPT[f]||0)>=Number(ms.cumulative[f]||0));
+
+    // Per-ETD delta (what THIS order asks, not cumulative)
+    const etdDelta={};FAMS_ORDER.forEach(f=>{etdDelta[f]=Number(ms.delta[f]||0);});
+
+    // What's available for THIS ETD = cumPT - already dispatched in previous ETDs
+    const availForThis={};FAMS_ORDER.forEach(f=>{availForThis[f]=Math.max(0,Math.floor(Number(cumPT[f]||0))-dispatchedSoFar[f]);});
+
+    // How much can actually ship for THIS ETD
+    const canShipThis={};const gapThis={};
+    FAMS_ORDER.forEach(f=>{
+      canShipThis[f]=Math.min(availForThis[f],etdDelta[f]);
+      gapThis[f]=Math.max(0,etdDelta[f]-canShipThis[f]);
+    });
+
+    const anyDemand=FAMS_ORDER.some(f=>etdDelta[f]>0);
+    const thisOk=FAMS_ORDER.every(f=>gapThis[f]===0);
+
+    // Stock after dispatching THIS ETD
+    const stockAfter={};
+    FAMS_ORDER.forEach(f=>{stockAfter[f]=Math.max(0,availForThis[f]-canShipThis[f]);});
+
+    // Update dispatched tracker
+    FAMS_ORDER.forEach(f=>{dispatchedSoFar[f]+=canShipThis[f];});
+
+    if(!anyDemand)return;
+
+    h+='<details open style="border:1px solid '+(thisOk?'rgba(34,197,94,.3)':'rgba(239,68,68,.3)')+';border-radius:10px;margin-bottom:8px;background:'+(thisOk?'rgba(34,197,94,.04)':'rgba(239,68,68,.04)')+'"><summary style="padding:10px 14px;cursor:pointer;font-weight:700;font-size:13px;color:'+(thisOk?'#45d483':'#ff6b6b')+'">';
+    h+=(thisOk?'✅':'🔴')+' ETD '+ms.date+' · '+ms.client;
+    if(!thisOk&&probDate)h+=' → completo el '+probDate+' (+'+delayWD+' días háb.)';
+    else if(!thisOk)h+=' → NO alcanza en horizonte';
+    h+='</summary><div style="padding:10px 14px">';
+
+    // ── Table: clear columns ──
+    // Previous ETD remanente for breakdown
+    const prevRemanente={};
+    if(mi>0){
+      const prevMs=milestones[mi-1];
+      let prevIdx=-1;for(let i=0;i<daily.length;i++){if(daily[i].date<=prevMs.date)prevIdx=i;}
+      const prevCumPT=prevIdx>=0&&daily[prevIdx]?(daily[prevIdx].cumulativeAvail||daily[prevIdx].cumulativePT||{}):{};
+      const prevDisp={};FAMS_ORDER.forEach(f=>{let d2=0;for(let k=0;k<mi;k++){const pm=milestones[k];const pd=Number(pm.delta[f]||0);let pli=-1;for(let i=0;i<daily.length;i++){if(daily[i].date<=pm.date)pli=i;}const pcum=pli>=0&&daily[pli]?Number(((daily[pli].cumulativeAvail||daily[pli].cumulativePT||{})[f])||0):0;d2+=Math.min(pd,Math.max(0,pcum-d2));}prevDisp[f]=d2;});
+      FAMS_ORDER.forEach(f=>{prevRemanente[f]=Math.max(0,Math.floor(Number((prevIdx>=0&&daily[prevIdx]?((daily[prevIdx].cumulativeAvail||daily[prevIdx].cumulativePT||{})[f]):0)||0))-prevDisp[f]);});
+    } else {
+      FAMS_ORDER.forEach(f=>{prevRemanente[f]=Math.floor(Number(cumPT[f]||0));});
+    }
+    const prodBetween={};
+    FAMS_ORDER.forEach(f=>{prodBetween[f]=Math.max(0,availForThis[f]-(prevRemanente[f]||0));});
+
+    h+='<table style="width:100%;font-size:12px;border-collapse:collapse">';
+    h+='<tr style="background:rgba(255,255,255,.04)"><th style="text-align:left;padding:5px 8px">Familia</th><th style="padding:5px">Solicitan<br><span style="font-size:9px;font-weight:400;color:var(--muted)">(este pedido)</span></th><th style="padding:5px">Remanente<br><span style="font-size:9px;font-weight:400;color:var(--muted)">(ETD anterior)</span></th><th style="padding:5px">Producción<br><span style="font-size:9px;font-weight:400;color:var(--muted)">(entre ETDs)</span></th><th style="padding:5px">Total disponible<br><span style="font-size:9px;font-weight:400;color:var(--muted)">(rem.+prod.)</span></th><th style="padding:5px">Despacho</th><th style="padding:5px">Faltante</th></tr>';
+
+    FAMS_ORDER.forEach(f=>{
+      const req=etdDelta[f];if(!req)return;
+      const avail=availForThis[f];
+      const ship=canShipThis[f];
+      const gap=gapThis[f];
+      const cc=gap>0?'#ff6b6b':'#45d483';
+      const rem=mi>0?prevRemanente[f]:avail;
+      const prod=mi>0?prodBetween[f]:0;
+      h+='<tr style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:5px 8px;font-weight:700">'+f.replace('_',' ')+'</td>';
+      h+='<td style="text-align:center;padding:5px;font-weight:700">'+fmt(req,0)+'</td>';
+      h+='<td style="text-align:center;padding:5px;color:var(--cyan)">'+fmt(rem,0)+'</td>';
+      h+='<td style="text-align:center;padding:5px;color:var(--green)">'+((mi>0&&prod>0)?'+'+fmt(prod,0):'—')+'</td>';
+      h+='<td style="text-align:center;padding:5px;color:var(--blue);font-weight:700">'+fmt(avail,0)+'</td>';
+      h+='<td style="text-align:center;padding:5px;color:'+cc+';font-weight:700">'+fmt(ship,0)+'</td>';
+      h+='<td style="text-align:center;padding:5px;color:'+cc+';font-weight:700">'+(gap?fmt(gap,0):'✅')+'</td></tr>';
+    });
+    h+='</table>';
+
+    h+=buildBackwardTable(mi);
+
+    h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin:10px 0 4px">Stock kits remanente después de despachar '+ms.client+':</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    FAMS_ORDER.forEach(f=>{
+      const v=stockAfter[f];
+      h+='<div style="background:var(--panel2);padding:5px 8px;border-radius:6px;border:1px solid var(--border);min-width:70px;text-align:center"><div style="font-size:9px;color:var(--muted)">'+f.replace('_',' ')+'</div><div style="font-size:16px;font-weight:800;color:'+(v>0?'var(--blue)':'#4a5568')+'">'+fmt(v,0)+'</div></div>';
+    });
+    h+='</div>';
+
+    if(mi<milestones.length-1){
+      const next=milestones[mi+1];
+      h+='<div style="font-size:10px;color:#93c5fd;padding:6px 8px;margin-top:8px;background:rgba(110,168,254,.06);border-radius:6px">💡 Si <b>'+next.client+'</b> ('+next.date+') pidiera ahora: ';
+      FAMS_ORDER.forEach(f=>{
+        const av=stockAfter[f];
+        const nd=Number(next.delta[f]||0);
+        if(nd>0)h+='<b>'+f.replace('_',' ')+'</b>: '+fmt(av,0)+'/'+fmt(nd,0)+(av>=nd?' ✅':' ❌')+' · ';
+      });
+      h+='</div>';
+    }
+    h+='</div></details>';
+  });
+
+  const finalDay=daily[daily.length-1];
+  if(finalDay&&finalDay.stock){
+    h+='<details style="border:1px solid var(--border);border-radius:10px;margin-top:14px"><summary style="padding:10px 14px;cursor:pointer;font-weight:700;font-size:13px;color:var(--text)">📦 Stock dinámico al cierre del horizonte</summary><div style="padding:10px 14px">';
+    h+='<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Stock Final = Stock Inicial + Producción total de semielaborados/resinas − Consumo por armado de kits − Despachos por pedidos ETD</div>';
+    h+='<table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:rgba(255,255,255,.04)"><th style="text-align:left;padding:4px 6px">Componente</th><th style="padding:4px">Inicial</th><th style="padding:4px">Final</th><th style="padding:4px">Δ (variación neta)</th></tr>';
+    const iStk=lastResult.initialStock||{};
+    STOCK_META.filter(m=>m.used).forEach(m=>{
+      const ini=Number(iStk[m.key]||0);const fin=Math.floor(Number(finalDay.stock[m.key]||0));const d=fin-Math.floor(ini);
+      const c=d>0?'#45d483':d<0?'#ff6b6b':'var(--muted)';
+      h+='<tr style="border-bottom:1px solid rgba(255,255,255,.04)"><td style="padding:3px 6px">'+m.label.slice(0,55)+'</td><td style="text-align:center;padding:3px">'+fmt(ini,0)+'</td><td style="text-align:center;padding:3px;font-weight:700;color:'+c+'">'+fmt(fin,0)+'</td><td style="text-align:center;padding:3px;color:'+c+'">'+(d>=0?'+':'')+fmt(d,0)+'</td></tr>';
+    });
+    h+='</table></div></details>';
+  }
+  el.innerHTML=h;
+}
+function runSimAnalysis(){
+  const el=document.getElementById('simOps');if(!el)return;
+  el.innerHTML='<div style="padding:16px;text-align:center;color:#93c5fd">🔄 Simulando 8 escenarios...</div>';
+  setTimeout(()=>{
+    const opsRange=[8,9,10,11,12,13,14,15];const origOps=document.getElementById('ops').value;const results=[];
+    opsRange.forEach(testOps=>{
+      document.getElementById('ops').value=testOps;
+      try{runScenario();if(!lastResult)return;
+        const an=getPlanAnalytics(lastResult,orders);const daily=an.daily||[];const milestones=getOrderMilestones(getOrdersArray());
+        const dk=copyObj(lastResult.displayKits||{});
+        const etdRes=milestones.map(ms=>{let prob='';for(const d of daily){const _ca=(d.cumulativeAvail||d.cumulativePT||{});if(FAMS_ORDER.every(f=>Number((_ca&&_ca[f])||0)>=Number((ms.cumulative&&ms.cumulative[f])||0))){prob=d.date;break;}}
+          const onTime=!!prob&&prob<=ms.date;let delay=0;if(prob&&prob>ms.date)delay=calendarData.filter(c2=>c2.work&&c2.date>ms.date&&c2.date<=prob).length;
+          return{date:ms.date,client:ms.client,ok:onTime,probDate:prob,delay};});
+        results.push({ops:testOps,kits:dk,total:Object.values(dk).reduce((a,b)=>a+b,0),etd:etdRes,etdOk:etdRes.filter(e=>e.ok).length});
+      }catch(e){results.push({ops:testOps,error:e.message});}
+    });
+    document.getElementById('ops').value=origOps;runScenario();
+    const milestones=getOrderMilestones(getOrdersArray());
+    let h='<div style="font-size:14px;font-weight:800;color:var(--text);margin:16px 0 8px">👷 ¿Cuántos operadores necesito?</div>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="background:#0f1830;color:var(--muted)">';
+    h+='<th style="padding:6px;text-align:left">Ops</th>';
+    FAMS_ORDER.forEach(f=>{h+='<th style="padding:4px">'+f.replace('_',' ')+'</th>';});
+    h+='<th style="padding:4px">Total</th><th style="padding:4px">ETD ✅</th>';
+    milestones.forEach(ms=>{h+='<th style="padding:4px;font-size:9px">'+ms.date.slice(5)+' '+ms.client+'</th>';});
+    h+='</tr></thead><tbody>';
+    results.forEach(r=>{if(r.error)return;const isCur=r.ops===Number(origOps);
+      h+='<tr style="border-bottom:1px solid #213255;'+(isCur?'background:rgba(110,168,254,.08);font-weight:700':'')+'">';
+      h+='<td style="padding:5px 6px;font-weight:800;color:'+(isCur?'var(--blue)':'var(--text)')+'">'+r.ops+(isCur?' ◄':'')+'</td>';
+      FAMS_ORDER.forEach(f=>{const v=r.kits[f]||0;const g=lastResult.goals[f]||0;const pct=g?Math.round(v/g*100):100;const cc=pct>=100?'#45d483':pct>=80?'#ffb454':'#ff6b6b';
+        h+='<td style="padding:4px;text-align:center;color:'+cc+'">'+fmt(v,0)+'</td>';});
+      h+='<td style="padding:4px;text-align:center;font-weight:700">'+fmt(r.total,0)+'</td>';
+      h+='<td style="padding:4px;text-align:center;font-weight:800;color:'+(r.etdOk>=milestones.length?'#45d483':r.etdOk>0?'#ffb454':'#ff6b6b')+'">'+r.etdOk+'/'+milestones.length+'</td>';
+      (r.etd||[]).forEach(e=>{h+='<td style="padding:4px;text-align:center;font-size:10px;color:'+(e.ok?'#45d483':'#ff6b6b')+'">'+(e.ok?'✅':e.probDate?e.probDate.slice(5)+' (+'+e.delay+'d)':'❌')+'</td>';});
+      h+='</tr>';});h+='</tbody></table></div>';
+    const curr=results.find(r=>r.ops===Number(origOps));const currOk=curr?curr.etdOk:0;
+    let bestExtra=null;for(const r of results){if(r.ops>Number(origOps)&&!r.error&&r.etdOk>currOk){if(!bestExtra||r.etdOk>bestExtra.etdOk||(r.etdOk===bestExtra.etdOk&&r.ops<bestExtra.ops))bestExtra=r;}}
+    if(bestExtra){h+='<div style="margin-top:12px;padding:12px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);border-radius:10px"><div style="font-size:13px;font-weight:800;color:#45d483">💡 Recomendación</div><div style="font-size:12px;color:#b7f7d0;margin-top:4px">Con <b>'+bestExtra.ops+' operadores</b> (+'+(bestExtra.ops-Number(origOps))+') lograrías <b>'+bestExtra.etdOk+' ETDs cumplidas</b> (actual: '+currOk+').</div></div>';
+    }else{h+='<div style="margin-top:12px;padding:12px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);border-radius:10px"><div style="font-size:12px;color:#fcd34d">⚠️ Si ves operadores ociosos, ahora el motor intentará saturar bloques con relleno útil de semielaborados/kits. Si aun así no mejora, el cuello dominante es fabricación de resinas (1 batch/día) o restricciones de fecha/stock.</div></div>';}
+    el.innerHTML=h;
+  },100);
+}
+
+function exportSimXLS(){
+  if(!lastResult||!lastResult.analytics)return;
+  const analytics=lastResult.analytics;const daily=analytics.daily||[];const milestones=getOrderMilestones(getOrdersArray());
+  let x='<html><head><meta charset="UTF-8"><style>body{font-family:Calibri;font-size:11px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:4px 6px}th{background:#1a3366;color:#fff}.ok{background:#d4edda;color:#155724}.fail{background:#f8d7da;color:#721c24}.hdr{background:#0d2240;color:#6ea8fe;font-weight:800;font-size:12px}</style></head><body>';
+  x+='<h2>Simulación S&OP — MPS Bertech v52</h2><p>Generado: '+new Date().toLocaleString('es-CL')+' · Operadores: '+opsProfileLabel(lastResult)+'</p>';
+  const dispSoFar=makeFamilyMap();
+  milestones.forEach(ms=>{
+    const cumPT={};let lastIdx=-1;for(let i=0;i<daily.length;i++){if(daily[i].date<=ms.date)lastIdx=i;}
+    const dayAt=lastIdx>=0?daily[lastIdx]:null;if(dayAt){const _ca=(dayAt.cumulativeAvail||dayAt.cumulativePT||{});FAMS_ORDER.forEach(f=>{cumPT[f]=Number(_ca[f]||0);});}
+    const avail={};FAMS_ORDER.forEach(f=>{avail[f]=Math.max(0,Math.floor(Number(cumPT[f]||0))-dispSoFar[f]);});
+    x+='<table style="margin-top:16px"><tr class="hdr"><td colspan="7">ETD '+ms.date+' · '+(ms.client||'')+'</td></tr>';
+    x+='<tr><th>Familia</th><th>Solicitan (este pedido)</th><th>Remanente ETD ant.</th><th>Producción entre ETDs</th><th>Total disponible</th><th>Despacho</th><th>Faltante</th></tr>';
+    FAMS_ORDER.forEach(f=>{const req=Number(ms.delta[f]||0);if(!req)return;const ship=Math.min(avail[f],req);const gap=Math.max(0,req-ship);
+      x+='<tr><td><b>'+f.replace('_',' ')+'</b></td><td style="text-align:right">'+fmt(req,0)+'</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">'+fmt(avail[f],0)+'</td><td class="'+(gap?'fail':'ok')+'" style="text-align:right">'+fmt(ship,0)+'</td><td style="text-align:right">'+(gap?fmt(gap,0):'✅')+'</td></tr>';
+      dispSoFar[f]+=ship;});
+    const stk={};FAMS_ORDER.forEach(f=>{stk[f]=Math.max(0,avail[f]-Math.min(avail[f],Number(ms.delta[f]||0)));});
+    x+='<tr><td colspan="7" style="background:#eef"><b>Stock remanente:</b> ';FAMS_ORDER.forEach(f=>{x+=f.replace('_',' ')+': '+fmt(stk[f],0)+' · ';});x+='</td></tr></table>';
+  });
+  x+='<h3 style="margin-top:20px">Stock dinámico final</h3><table><tr><th>Componente</th><th>Inicial</th><th>Final</th><th>Δ</th></tr>';
+  const finalDay=daily[daily.length-1];const iStk=lastResult.initialStock||{};
+  if(finalDay)STOCK_META.filter(m=>m.used).forEach(m=>{const ini=Number(iStk[m.key]||0);const fin=Math.floor(Number(finalDay.stock[m.key]||0));const d=fin-Math.floor(ini);
+    x+='<tr><td>'+m.label.slice(0,60)+'</td><td style="text-align:right">'+fmt(ini,0)+'</td><td style="text-align:right;font-weight:700">'+fmt(fin,0)+'</td><td style="text-align:right;color:'+(d>=0?'green':'red')+'">'+(d>=0?'+':'')+fmt(d,0)+'</td></tr>';});
+  x+='</table></body></html>';
+  saveFileAs(new Blob([x],{type:'application/vnd.ms-excel'}),'Simulacion_SOP_v52.xls');
+}
+
+const _origRR=renderResult;renderResult=function(){_origRR.apply(this,arguments);try{renderSimulation();}catch(e){console.error('Sim:',e);}};
+
+buildStockGrid();regenerateCalendar();updateEngineFlags();runScenario();
