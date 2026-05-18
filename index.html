@@ -3,8 +3,13 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Planner PCP Producción</title>
-<!-- MSAL.js para autenticación Microsoft / SharePoint -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<!-- MSAL.js — CDN oficial Microsoft com fallback -->
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js" crossorigin="anonymous"></script>
+<script>
+  if (typeof msal === 'undefined') {
+    document.write('<script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"><\/script>');
+  }
+</script>
 <script>
 // ═══════════════════════════════════════════════════
 // CONFIGURACIÓN SHAREPOINT — ajustar si cambia el tenant
