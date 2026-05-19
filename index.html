@@ -3,40 +3,52 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Planner PCP Producción</title>
+<!-- MSAL.js oficial Microsoft -->
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js" crossorigin="anonymous"></script>
 <script>
 // ═══════════════════════════════════════════════════
-// INTEGRACIÓN SHAREPOINT via Azure Static Web Apps Auth
-// Usa /.auth/me para obtener token AAD sin MSAL externo
+// INTEGRACIÓN SHAREPOINT via MSAL popup (plano Free SWA)
 // ═══════════════════════════════════════════════════
 const SP_CONFIG = {
+  clientId:    '3f269f44-7daa-4d18-ad6f-693cc0d37c16',
+  tenantId:    'f90ffe53-a192-4489-b8ba-a36af4a158e6',
   driveRelPath: '07. Producción/7.4 Planificación y control/7.4.2 Programación de producción/7.4.2.1 PCP/Planner-MPS',
   fileName:    'mps_dados.json',
   graphBase:   'https://graph.microsoft.com/v1.0',
-  siteId:      'bertechpty.sharepoint.com:/sites/Bertech_Panama:'
+  siteId:      'bertechpty.sharepoint.com:/sites/Bertech_Panama:',
+  scopes:      ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Files.ReadWrite.All']
 };
 
+let _msalApp = null;
+function getMsalApp() {
+  if (!_msalApp) {
+    _msalApp = new msal.PublicClientApplication({
+      auth: {
+        clientId:    SP_CONFIG.clientId,
+        authority:   'https://login.microsoftonline.com/' + SP_CONFIG.tenantId,
+        redirectUri: window.location.origin + window.location.pathname
+      },
+      cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+    });
+  }
+  return _msalApp;
+}
+
 async function getSpToken() {
-  // Azure SWA expone el token AAD en /.auth/me cuando el usuario está autenticado
-  const r = await fetch('/.auth/me');
-  if (!r.ok) {
-    window.location.href = '/.auth/login/aad';
-    throw new Error('Redirigiendo al login...');
+  const app = getMsalApp();
+  await app.initialize();
+  const accounts = app.getAllAccounts();
+  const req = { scopes: SP_CONFIG.scopes, account: accounts[0] };
+  try {
+    if (accounts.length > 0) {
+      const res = await app.acquireTokenSilent(req);
+      return res.accessToken;
+    }
+    throw new Error('no account');
+  } catch {
+    const res = await app.acquireTokenPopup({ scopes: SP_CONFIG.scopes });
+    return res.accessToken;
   }
-  const data = await r.json();
-  const client = data.clientPrincipal;
-  if (!client) {
-    window.location.href = '/.auth/login/aad';
-    throw new Error('No autenticado — redirigiendo...');
-  }
-  // Solicitar token para Graph API via endpoint SWA
-  const tokenResp = await fetch('/.auth/token', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({provider: 'aad', scopes: ['https://graph.microsoft.com/Sites.ReadWrite.All']})
-  });
-  if (!tokenResp.ok) throw new Error('No se pudo obtener token de Graph API');
-  const tokenData = await tokenResp.json();
-  return tokenData.access_token;
 }
 
 async function loadFromSharePoint() {
